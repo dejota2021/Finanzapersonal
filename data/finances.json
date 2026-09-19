@@ -1,0 +1,115 @@
+{
+  "settings": {
+    "projectName": "SISTEMA DE FINANZA",
+    "genreOrStyle": "General",
+    "currency": "COP",
+    "currencySymbol": "$",
+    "taxRatePercent": 0,
+    "partners": [
+      {
+        "id": "socio-1",
+        "name": "dejota",
+        "role": "Integrante",
+        "sharePercent": 50,
+        "color": "#f59e0b",
+        "avatarBg": "from-amber-500 to-orange-600"
+      },
+      {
+        "id": "socio-2",
+        "name": "marcelo",
+        "role": "Integrante",
+        "sharePercent": 50,
+        "color": "#8b5cf6",
+        "avatarBg": "from-purple-500 to-indigo-600"
+      }
+    ]
+  },
+  "budgets": [
+    {
+      "id": "dest-1",
+      "destination": "Proyecto",
+      "monthlyLimit": 0,
+      "color": "#f59e0b",
+      "iconName": "Tag",
+      "description": "Gastos e ingresos generales del proyecto"
+    },
+    {
+      "id": "dest-2",
+      "destination": "Efectivo",
+      "monthlyLimit": 0,
+      "color": "#10b981",
+      "iconName": "Tag",
+      "description": "Caja menor y efectivo disponible"
+    },
+    {
+      "id": "dest-3",
+      "destination": "Producción",
+      "monthlyLimit": 0,
+      "color": "#8b5cf6",
+      "iconName": "Tag",
+      "description": "Producción y grabación"
+    },
+    {
+      "id": "dest-1789753023343",
+      "destination": "Lanzamiento",
+      "monthlyLimit": 0,
+      "color": "#f59e0b",
+      "iconName": "Tag",
+      "description": "Destino personalizado"
+    },
+    {
+      "id": "dest-1789753316041",
+      "destination": "album",
+      "monthlyLimit": 0,
+      "color": "#f59e0b",
+      "iconName": "Tag",
+      "description": "Destino personalizado"
+    },
+    {
+      "id": "dest-1789753687110",
+      "destination": "Videoclip",
+      "monthlyLimit": 0,
+      "color": "#f59e0b",
+      "iconName": "Tag",
+      "description": "Destino personalizado"
+    }
+  ],
+  "transactions": [
+    {
+      "type": "expense",
+      "title": "sub ( app de master)",
+      "amount": 33000,
+      "destination": "album",
+      "isDeductible": false,
+      "deductiblePercentage": 0,
+      "paidBy": "socio-1",
+      "splitRatio": {
+        "socio-1": 50,
+        "socio-2": 50
+      },
+      "date": "2026-09-18",
+      "notes": "",
+      "id": "tx-1789753655225-1yr9",
+      "createdAt": "2026-09-18T17:47:35.225Z"
+    },
+    {
+      "title": "MUTE",
+      "amount": 11000000,
+      "type": "income",
+      "destination": "Lanzamiento",
+      "isDeductible": false,
+      "deductiblePercentage": 0,
+      "paidBy": "socio-1",
+      "splitRatio": {
+        "socio-1": 50,
+        "socio-2": 50
+      },
+      "date": "2026-09-18",
+      "notes": "Nota de voz: \"ingresaron 11 millones de pesos para el proyecto de DEJOTA mute el lanzamiento\"",
+      "voiceRecorded": true,
+      "id": "tx-1789753023707-89h8",
+      "createdAt": "2026-09-18T17:37:03.707Z"
+    }
+  ],
+  "lastUpdated": "2026-09-18T18:04:06.867Z"
+}

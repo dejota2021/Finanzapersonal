@@ -1,0 +1,6 @@
+{
+  "name": "SISTEMA DE FINANZA",
+  "description": "SISTEMA DE FINANZA - Control financiero inteligente con registro por voz con IA, gestión de presupuestos, libro contable y sincronización en tiempo real.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
