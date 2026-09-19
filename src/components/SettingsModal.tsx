@@ -2,22 +2,14 @@ import React, { useState, useMemo } from 'react';
 import {
   X,
   Check,
-  Users,
   Sliders,
   RotateCcw,
   FileSpreadsheet,
   FileText,
-  Sun,
-  Moon,
   RefreshCw,
-  Calendar,
   Layers,
-  Scale,
   CalendarDays,
-  TrendingUp,
-  TrendingDown,
   Search,
-  Filter,
 } from 'lucide-react';
 import { ProjectSettings, Transaction } from '../types';
 import {
@@ -66,7 +58,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onSaveSettings,
   onResetAll,
 }) => {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('period');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const [isResetConfirming, setIsResetConfirming] = useState(false);
   const [formData, setFormData] = useState<ProjectSettings>(settings);
   const [isSaving, setIsSaving] = useState(false);
   const [consolidatedSearch, setConsolidatedSearch] = useState('');
@@ -137,17 +130,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
+  // If not in modal mode, render without wrapper (handled by parent)
   return (
     <div
-      id="settings-modal-backdrop"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in"
+      id="settings-page"
+      className={`w-full max-w-3xl mx-auto flex flex-col h-full`}
     >
       <div
-        id="settings-modal"
-        className={`w-full max-w-3xl rounded-3xl border shadow-2xl transition-all max-h-[92vh] flex flex-col ${
-          darkMode
-            ? 'bg-neutral-900 border-neutral-800 text-neutral-100'
-            : 'bg-white border-neutral-200 text-neutral-900'
+        className={`w-full flex-1 flex flex-col ${
+          darkMode ? 'bg-neutral-900 border-neutral-800 text-neutral-100' : 'bg-white border-neutral-200 text-neutral-900'
         }`}
       >
         {/* Modal Header */}
@@ -165,43 +156,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-xl text-neutral-400 hover:text-current hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
         {/* Navigation Tabs Inside Settings */}
         <div className="px-4 sm:px-5 pt-3 pb-2 border-b border-neutral-700/30 flex items-center gap-2 overflow-x-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab('period')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
-              activeTab === 'period'
-                ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
-                : 'text-neutral-500 dark:text-neutral-400 hover:text-current hover:bg-neutral-100 dark:hover:bg-neutral-800'
-            }`}
-          >
-            <CalendarDays className="w-4 h-4" />
-            <span>Hojas por Mes ({selectedMonth ? `${MONTHS_ES[selectedMonth - 1]} ` : 'Año '}{selectedYear})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('consolidated')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
-              activeTab === 'consolidated'
-                ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
-                : 'text-neutral-500 dark:text-neutral-400 hover:text-current hover:bg-neutral-100 dark:hover:bg-neutral-800'
-            }`}
-          >
-            <Layers className="w-4 h-4" />
-            <span>Consolidado Histórico</span>
-          </button>
-
           <button
             type="button"
             onClick={() => setActiveTab('general')}
@@ -214,13 +172,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <Sliders className="w-4 h-4" />
             <span>Ajustes & Exportación</span>
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('consolidated')}
+            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+              activeTab === 'consolidated'
+                ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
+                : 'text-neutral-500 dark:text-neutral-400 hover:text-current hover:bg-neutral-100 dark:hover:bg-neutral-800'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            <span>Consolidado Histórico</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('period')}
+            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+              activeTab === 'period'
+                ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
+                : 'text-neutral-500 dark:text-neutral-400 hover:text-current hover:bg-neutral-100 dark:hover:bg-neutral-800'
+            }`}
+          >
+            <CalendarDays className="w-4 h-4" />
+            <span>Hojas por Mes ({selectedMonth ? `${MONTHS_ES[selectedMonth - 1]} ` : 'Año '}{selectedYear})</span>
+          </button>
         </div>
 
         {/* Scrollable Content Body */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-5">
-          {/* ==================================================== */}
-          {/* TAB 1: HOJAS POR MES & FILTRO DE PERIODO              */}
-          {/* ==================================================== */}
+          {/* TAB 1: HOJAS POR MES & FILTRO DE PERIODO */}
           {activeTab === 'period' && (
             <div className="space-y-4 animate-fade-in">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-neutral-100 dark:bg-neutral-950/60 border border-neutral-200 dark:border-neutral-800">
@@ -232,7 +212,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     Elige el mes y año para ver y registrar movimientos en esa hoja contable.
                   </p>
                 </div>
-
                 {/* Year Picker */}
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-neutral-400">Año:</span>
@@ -263,7 +242,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <span className="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-neutral-400">
                   Hojas Mensuales del {inspectYear}
                 </span>
-
                 <button
                   type="button"
                   onClick={() => {
@@ -326,7 +304,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           <span>Movimientos:</span>
                           <span className="font-mono font-bold">{m.count}</span>
                         </div>
-
                         <div className="flex items-center justify-between text-xs font-mono font-bold">
                           <span>Balance:</span>
                           <span
@@ -354,9 +331,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           )}
 
-          {/* ==================================================== */}
-          {/* TAB 2: CONSOLIDADO HISTÓRICO MULTIANUAL               */}
-          {/* ==================================================== */}
+          {/* TAB 2: CONSOLIDADO HISTÓRICO MULTIANUAL */}
           {activeTab === 'consolidated' && (
             <div className="space-y-4 animate-fade-in">
               {/* All-time Summary Banner */}
@@ -421,7 +396,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <span className="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-neutral-400">
                   Resumen por Años Registrados
                 </span>
-
                 <div className="space-y-2">
                   {multiYearSummary.years.map((y) => (
                     <div
@@ -439,7 +413,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           <p className="text-xs text-neutral-400">{y.txCount} transacciones en el año</p>
                         </div>
                       </div>
-
                       <div className="flex items-center gap-4 font-mono text-xs sm:text-sm flex-wrap">
                         <span className="text-emerald-500 font-bold" title="Ingresos">
                           +{formatCurrency(y.totalIncome, sym)}
@@ -471,7 +444,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     {filteredConsolidatedTx.length} resultado(s)
                   </span>
                 </div>
-
                 <div className="relative">
                   <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
                   <input
@@ -486,7 +458,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     }`}
                   />
                 </div>
-
                 <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
                   {filteredConsolidatedTx.slice(0, 50).map((tx) => (
                     <div
@@ -516,9 +487,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           )}
 
-          {/* ==================================================== */}
-          {/* TAB 3: AJUSTES GENERALES, SOCIOS Y EXPORTACIONES      */}
-          {/* ==================================================== */}
+          {/* TAB 3: AJUSTES GENERALES, SOCIOS Y EXPORTACIONES */}
           {activeTab === 'general' && (
             <div className="space-y-4 animate-fade-in">
               {/* Quick Actions / Export */}
@@ -526,17 +495,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <span className="text-xs font-extrabold uppercase tracking-wider text-neutral-400 block">
                   Exportaciones y Apariencia
                 </span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   {/* Export Excel */}
                   <button
                     id="settings-export-excel-btn"
                     type="button"
                     onClick={onExportExcel}
-                    className={`p-3 rounded-xl border text-xs sm:text-sm font-bold flex items-center gap-3 transition-all cursor-pointer ${
-                      darkMode
-                        ? 'bg-neutral-900 border-neutral-750 hover:bg-emerald-950/30 hover:border-emerald-600 text-emerald-400'
-                        : 'bg-white border-neutral-200 hover:bg-emerald-50 hover:border-emerald-400 text-emerald-700'
-                    }`}
+                    className="p-3 rounded-xl border text-xs sm:text-sm font-bold flex items-center gap-3 transition-all cursor-pointer bg-neutral-900 border-neutral-750 hover:bg-emerald-950/30 hover:border-emerald-600 text-emerald-400"
                   >
                     <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center flex-shrink-0">
                       <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
@@ -552,11 +517,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     id="settings-export-pdf-btn"
                     type="button"
                     onClick={onExportPdf}
-                    className={`p-3 rounded-xl border text-xs sm:text-sm font-bold flex items-center gap-3 transition-all cursor-pointer ${
-                      darkMode
-                        ? 'bg-neutral-900 border-neutral-750 hover:bg-amber-950/30 hover:border-amber-600 text-amber-400'
-                        : 'bg-white border-neutral-200 hover:bg-amber-50 hover:border-amber-400 text-amber-700'
-                    }`}
+                    className="p-3 rounded-xl border text-xs sm:text-sm font-bold flex items-center gap-3 transition-all cursor-pointer bg-neutral-900 border-neutral-750 hover:bg-amber-950/30 hover:border-amber-600 text-amber-400"
                   >
                     <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center flex-shrink-0">
                       <FileText className="w-4 h-4 text-amber-500" />
@@ -567,41 +528,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                   </button>
 
-                  {/* Toggle Theme */}
-                  <button
-                    id="settings-theme-toggle-btn"
-                    type="button"
-                    onClick={() => setDarkMode(!darkMode)}
-                    className={`p-3 rounded-xl border text-xs sm:text-sm font-bold flex items-center gap-3 transition-all cursor-pointer ${
-                      darkMode
-                        ? 'bg-neutral-900 border-neutral-750 text-neutral-200 hover:bg-neutral-800'
-                        : 'bg-white border-neutral-200 text-neutral-800 hover:bg-neutral-100'
-                    }`}
-                  >
-                    <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center flex-shrink-0">
-                      {darkMode ? (
-                        <Sun className="w-4 h-4 text-amber-400" />
-                      ) : (
-                        <Moon className="w-4 h-4 text-neutral-600" />
-                      )}
-                    </div>
-                    <div className="text-left">
-                      <p className="font-extrabold">{darkMode ? 'Modo Claro' : 'Modo Oscuro'}</p>
-                      <p className="text-xs text-neutral-400 font-normal">Alternar apariencia visual</p>
-                    </div>
-                  </button>
-
                   {/* Sync */}
                   <button
                     id="settings-sync-refresh-btn"
                     type="button"
                     onClick={onRefresh}
                     disabled={isRefreshing}
-                    className={`p-3 rounded-xl border text-xs sm:text-sm font-bold flex items-center gap-3 transition-all cursor-pointer ${
-                      darkMode
-                        ? 'bg-neutral-900 border-neutral-750 text-neutral-200 hover:bg-neutral-800'
-                        : 'bg-white border-neutral-200 text-neutral-800 hover:bg-neutral-100'
-                    }`}
+                    className="p-3 rounded-xl border text-xs sm:text-sm font-bold flex items-center gap-3 transition-all cursor-pointer bg-neutral-900 border-neutral-750 text-neutral-200 hover:bg-neutral-800"
                   >
                     <div className="w-8 h-8 rounded-lg bg-blue-500/15 flex items-center justify-center flex-shrink-0">
                       <RefreshCw
@@ -622,7 +555,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <span className="text-xs font-extrabold uppercase tracking-wider text-neutral-400 block">
                     Datos del Proyecto y Moneda
                   </span>
-
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="sm:col-span-3">
                       <label className="block font-bold text-neutral-400 mb-1">
@@ -681,33 +613,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         }`}
                       />
                     </div>
+
+                    <div className="sm:col-span-3">
+                      <label className="block font-bold text-neutral-400 mb-1">
+                        Límite de Presupuesto Diario
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.dailyBudget || ''}
+                        onChange={(e) =>
+                          setFormData({ ...formData, dailyBudget: parseFloat(e.target.value) || 0 })
+                        }
+                        placeholder="0"
+                        className={`w-full px-3.5 py-2.5 rounded-xl border outline-none font-bold text-sm sm:text-base ${
+                          darkMode
+                            ? 'bg-neutral-950 border-neutral-700 text-white focus:border-amber-500'
+                            : 'bg-neutral-50 border-neutral-300 text-neutral-900 focus:border-amber-500'
+                        }`}
+                      />
+                    </div>
                   </div>
                 </div>
 
                 {/* Reset All Option */}
-                {onResetAll && (
-                  <div className="p-3.5 rounded-xl border border-rose-900/40 bg-rose-950/20 flex items-center justify-between gap-3">
-                    <div>
-                      <p className="font-extrabold text-rose-400">Reiniciar sistema a 0</p>
-                      <p className="text-xs text-neutral-400">
-                        Borra todos los movimientos registrados para comenzar de cero.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (confirm('¿Estás seguro de reiniciar todos los movimientos a 0? Esta acción no se puede deshacer.')) {
-                          await onResetAll();
-                          onClose();
-                        }
-                      }}
-                      className="px-3.5 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition-colors flex items-center gap-1.5 flex-shrink-0 cursor-pointer"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                      <span>Poner a 0</span>
-                    </button>
-                  </div>
-                )}
+                {/* Reset All Component Removed */}
 
                 {/* Save Settings Button */}
                 <div className="pt-3 border-t border-neutral-700/30 flex items-center justify-end gap-2.5">

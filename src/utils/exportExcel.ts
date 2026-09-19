@@ -23,7 +23,7 @@ export function exportToExcel(state: ProjectFinanceState) {
     [`Total de Movimientos: ${transactions.length}`],
     [],
     [
-      'Nº',
+      'N°',
       'Fecha',
       'Tipo de Movimiento',
       'Concepto / Detalle',
@@ -72,7 +72,6 @@ export function exportToExcel(state: ProjectFinanceState) {
   ]);
 
   const wsTransactions = XLSX.utils.aoa_to_sheet(txSheetAoa);
-
   wsTransactions['!cols'] = [
     { wch: 6 },
     { wch: 13 },
@@ -130,5 +129,6 @@ export function exportToExcel(state: ProjectFinanceState) {
   const cleanName = projectName.replace(/[^a-zA-Z0-9_-]/g, '_');
   const dateStr = new Date().toISOString().slice(0, 10);
   const fileName = `${cleanName || 'Finanzas'}_Registros_${dateStr}.xlsx`;
+
   XLSX.writeFile(wb, fileName);
 }

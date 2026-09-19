@@ -22,7 +22,7 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-// Initial default state without hardcoded values
+// Initial default state
 const initialData: ProjectFinanceState = {
   settings: {
     projectName: 'SISTEMA DE FINANZA',
@@ -30,6 +30,7 @@ const initialData: ProjectFinanceState = {
     currency: 'COP',
     currencySymbol: '$',
     taxRatePercent: 0,
+    dailyBudget: 0,
     partners: [
       {
         id: 'socio-1',
@@ -186,7 +187,6 @@ app.get('/api/sync/events', (req, res) => {
     })}\n\n`
   );
 
-  // Broadcast user count update to all clients
   broadcastOnlineCount();
 
   const heartbeat = setInterval(() => {
@@ -204,20 +204,43 @@ app.get('/api/sync/events', (req, res) => {
   });
 });
 
-// 4. Add Transaction
+// 4. Add Transaction (with deduplication safety)
 app.post('/api/finances/transactions', (req, res) => {
   try {
     const state = loadState();
+    const assignedId = req.body.id || `tx-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const newTx: Transaction = {
       ...req.body,
-      id: req.body.id || `tx-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      createdAt: new Date().toISOString(),
+      id: assignedId,
+      createdAt: req.body.createdAt || new Date().toISOString(),
     };
+
+    // Safeguard: Check if this exact transaction was already inserted
+    const existingIndex = state.transactions.findIndex(
+      (t) =>
+        t.id === newTx.id ||
+        (t.title === newTx.title &&
+          Number(t.amount) === Number(newTx.amount) &&
+          t.destination === newTx.destination &&
+          t.type === newTx.type &&
+          Math.abs(new Date(t.createdAt).getTime() - new Date(newTx.createdAt).getTime()) < 12000)
+    );
+
+    if (existingIndex !== -1) {
+      state.transactions[existingIndex] = {
+        ...state.transactions[existingIndex],
+        ...newTx,
+      };
+      saveState(state);
+      return res.status(200).json({ success: true, transaction: state.transactions[existingIndex] });
+    }
+
     state.transactions.unshift(newTx);
     saveState(state);
 
     const partnerName = state.settings.partners.find((p) => p.id === newTx.paidBy)?.name || newTx.paidBy || 'Usuario';
     const isVoice = Boolean(newTx.voiceRecorded);
+
     const syncEvent: SyncEvent = {
       id: `ev-${Date.now()}`,
       type: 'TRANSACTION_ADDED',
@@ -226,6 +249,7 @@ app.post('/api/finances/transactions', (req, res) => {
       partnerName,
       timestamp: new Date().toISOString(),
     };
+
     broadcastSSE(syncEvent);
     res.status(201).json({ success: true, transaction: newTx, event: syncEvent });
   } catch (err: any) {
@@ -242,6 +266,7 @@ app.put('/api/finances/transactions/:id', (req, res) => {
     if (index === -1) {
       return res.status(404).json({ error: 'Transacción no encontrada' });
     }
+
     state.transactions[index] = {
       ...state.transactions[index],
       ...req.body,
@@ -251,6 +276,7 @@ app.put('/api/finances/transactions/:id', (req, res) => {
 
     const updatedTx = state.transactions[index];
     const partnerName = state.settings.partners.find((p) => p.id === updatedTx.paidBy)?.name || updatedTx.paidBy || 'Usuario';
+
     const syncEvent: SyncEvent = {
       id: `ev-${Date.now()}`,
       type: 'TRANSACTION_UPDATED',
@@ -259,6 +285,7 @@ app.put('/api/finances/transactions/:id', (req, res) => {
       partnerName,
       timestamp: new Date().toISOString(),
     };
+
     broadcastSSE(syncEvent);
     res.json({ success: true, transaction: updatedTx });
   } catch (err: any) {
@@ -318,7 +345,7 @@ app.post('/api/finances/budgets', (req, res) => {
   }
 });
 
-// 8. Update Settings (Project name, currency, partners)
+// 8. Update Settings
 app.post('/api/finances/settings', (req, res) => {
   try {
     const { settings } = req.body;
@@ -363,7 +390,40 @@ app.post('/api/finances/reset', (req, res) => {
   }
 });
 
-// 8c. Upload / Attach file (PDF, Spreadsheet, Document)
+// 8c. Restore data
+app.post('/api/finances/restore', (req, res) => {
+  try {
+    const { state: incomingState } = req.body;
+    if (!incomingState || !incomingState.settings) {
+      return res.status(400).json({ error: 'Estado inválido' });
+    }
+    const state = loadState();
+    if (incomingState.transactions?.length > 0 || incomingState.settings?.dailyBudget !== undefined) {
+      state.transactions = incomingState.transactions || state.transactions;
+      state.settings = { ...state.settings, ...incomingState.settings };
+      if (incomingState.budgets?.length > 0) {
+        state.budgets = incomingState.budgets;
+      }
+      if (incomingState.attachments?.length > 0) {
+        state.attachments = incomingState.attachments;
+      }
+      saveState(state);
+      broadcastSSE({
+        id: `ev-${Date.now()}`,
+        type: 'SETTINGS_UPDATED',
+        data: state.settings,
+        message: 'Datos restaurados exitosamente',
+        partnerName: 'Sistema',
+        timestamp: new Date().toISOString(),
+      });
+    }
+    res.json({ success: true, state });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 8d. Upload / Attach file
 app.post('/api/finances/attachments', (req, res) => {
   try {
     const { name, size, type, fileCategory, year, month, scope, notes, dataUrl, uploadedBy } = req.body;
@@ -374,7 +434,6 @@ app.post('/api/finances/attachments', (req, res) => {
     if (!state.attachments) {
       state.attachments = [];
     }
-
     const newAttachment = {
       id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       name,
@@ -389,7 +448,6 @@ app.post('/api/finances/attachments', (req, res) => {
       uploadedBy: uploadedBy || 'Usuario',
       dataUrl,
     };
-
     state.attachments.unshift(newAttachment);
     saveState(state);
 
@@ -402,7 +460,6 @@ app.post('/api/finances/attachments', (req, res) => {
       timestamp: new Date().toISOString(),
     };
     broadcastSSE(syncEvent);
-
     res.json({ success: true, attachment: newAttachment });
   } catch (err: any) {
     console.error('Error saving attachment:', err);
@@ -410,7 +467,7 @@ app.post('/api/finances/attachments', (req, res) => {
   }
 });
 
-// 8d. Delete Attachment
+// 8e. Delete Attachment
 app.delete('/api/finances/attachments/:id', (req, res) => {
   try {
     const { id } = req.params;
@@ -433,7 +490,6 @@ app.delete('/api/finances/attachments/:id', (req, res) => {
       };
       broadcastSSE(syncEvent);
     }
-
     res.json({ success: true, id });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -442,13 +498,21 @@ app.delete('/api/finances/attachments/:id', (req, res) => {
 
 // 9. AI Voice Expense & Income Parser with Gemini & Colombian NLP
 let geminiClient: GoogleGenAI | null = null;
+
 function getGeminiClient(): GoogleGenAI {
   if (!geminiClient) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       throw new Error('GEMINI_API_KEY no está configurada en las variables de entorno.');
     }
-    geminiClient = new GoogleGenAI({ apiKey });
+    geminiClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
   }
   return geminiClient;
 }
@@ -469,10 +533,7 @@ app.post('/api/voice/parse', async (req, res) => {
     const partner2 = state.settings.partners[1];
     const destinationsList = state.budgets.map((b) => b.destination).join(', ');
 
-    const systemPrompt = `Eres un asistente contable financiero de alta precisión especializado en español y modismos financieros de Colombia / Latinoamérica.
-La moneda del proyecto es Pesos Colombianos (COP, símbolo ${state.settings.currencySymbol || '$'}).
-
-Tu labor es interpretar notas de voz o frases habladas de gastos e ingresos en español y extraer con total exactitud un objeto JSON estructurado.
+    const systemPrompt = `Eres un asistente contable financiero de alta precisión especializado en español y modismos financieros de Colombia / Latinoamérica. La moneda del proyecto es Pesos Colombianos (COP, símbolo ${state.settings.currencySymbol || '$'}). Tu labor es interpretar notas de voz o frases habladas de gastos e ingresos en español y extraer con total exactitud un objeto JSON estructurado.
 
 Integrantes:
 - Socio 1: "${partner1.name}" (ID: "${partner1.id}")
@@ -482,22 +543,16 @@ Destinos/categorías existentes: [${destinationsList || 'Proyecto, Efectivo, Pro
 
 REGLAS DE EXTRACCIÓN CRÍTICAS:
 1. "amount": Valor numérico entero o decimal exacto en Pesos Colombianos (COP).
-   - "5,000,000", "5.000.000", "cinco millones" = 5000000 (OJO: formato con comas o puntos de miles, NUNCA devuelvas 5)
-   - "11 millones", "once millones", "11 millones de pesos", "11,000,000" = 11000000
-   - "1.5 millones", "un millón y medio" = 1500000
-   - "2 millones", "dos millones", "2,000,000" = 2000000
-   - "500 mil pesos", "quinientos mil", "500,000", "500.000" = 500000
-   - "80 mil", "ochenta mil", "80,000" = 80000
-   - "11 palos" = 11000000
-   - "50 lucas" = 50000
-   NUNCA trunques valores de millones o miles a 5, 11, 500, 1000 o 0. Si el texto dice "5,000,000", devuelve el entero 5000000.
+   - INTERPRETACIÓN DE NÚMEROS: Debes convertir todos los formatos verbales a números enteros.
+   - Ejemplos de conversión: "1 millón 800" = 1800000, "1.8 millones" = 1800000, "5,000,000" = 5000000, "11 millones" = 11000000, "1.5 millones" = 1500000, "500 mil pesos" = 500000, "80 mil" = 80000, "11 palos" = 11000000, "50 lucas" = 50000.
+   - NUNCA trunques valores de millones o miles. Si el texto implica millones, asegúrate de añadir todos los ceros necesarios.
 2. "type": "income" (ingreso) o "expense" (gasto).
-   - Si dicen "ingresaron", "entró", "recibimos", "cobro", "abono", "ingreso", "nos pagaron", "aporte": OBLIGATORIAMENTE "income".
-   - Si dicen "gastamos", "se pagó", "pagué", "compramos", "costó", "las de 5,000,000 para": "expense".
-3. "title": Concepto o detalle limpio y conciso (ej: "Producción del lanzamiento del álbum de mew", "Efectivo para el proyecto", "Masterización", "Cables de audio", "Alquiler").
-   NUNCA dejes verbos o frases de relleno iniciales como "ingresaron", "gastamos", "las de", "el de", "los de".
-4. "destination": Destino o categoría más afín (ej: "Proyecto", "Efectivo", "Producción", etc.).
-   - Si dicen "en efectivos para el proyecto" o "para el proyecto", la categoría es "Proyecto" (o "Efectivo").
+   - Palabras clave ingreso: "ingresaron", "entró", "recibimos", "cobro", "abono", "ingreso", "nos pagaron", "aporte".
+   - Palabras clave gasto: "gastamos", "se pagó", "pagué", "compramos", "costó".
+3. "title": Concepto o detalle limpio y conciso (ej: "Arroz chino", "Almuerzo", "Alquiler", "Cables"). NUNCA dejes verbos de relleno iniciales.
+4. "destination": Clasificación obligatoria. Debes asignar el concepto (ej: "arroz chino") a la categoría o destino MÁS APROPIADO de la lista de destinos existentes: [${destinationsList || 'Proyecto, Efectivo, Producción, Lanzamiento, Ensayos, General'}].
+   - Si el concepto es comida/arroz chino/restaurante -> Mapea a 'Alimentación' (si existe) o el destino más lógico disponible.
+   - Si no estás seguro, usa 'Proyecto' o 'General'.
 5. "paidByPartnerId": ID del socio ("${partner1.id}" o "${partner2.id}"). Por defecto "${partner1.id}".
 6. "splitPartner1": 50.
 7. "splitPartner2": 50.
@@ -527,21 +582,35 @@ Responde ÚNICAMENTE con el objeto JSON válido.`;
     }
 
     const ai = getGeminiClient();
-    const generatePromise = ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: userPromptContent,
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: 'application/json',
-      },
-    });
+    
+    let response: any;
+    let retries = 0;
+    const maxRetries = 2;
+    
+    while (retries <= maxRetries) {
+      try {
+        const generatePromise = ai.models.generateContent({
+          model: 'gemini-1.5-flash',
+          contents: userPromptContent,
+          config: {
+            systemInstruction: systemPrompt,
+            responseMimeType: 'application/json',
+          },
+        });
 
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Timeout en llamada de IA, usando procesador NLP local')), 4500)
-    );
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout en llamada de IA')), 4500)
+        );
 
-    const response: any = await Promise.race([generatePromise, timeoutPromise]);
-
+        response = await Promise.race([generatePromise, timeoutPromise]);
+        break; // Success
+      } catch (err: any) {
+        retries++;
+        if (retries > maxRetries) throw err;
+        console.warn(`Retry ${retries} for Gemini API after error:`, err.message);
+        await new Promise(resolve => setTimeout(resolve, 1000 * retries)); // Exponential backoff
+      }
+    }
     const outputText = response.text || '{}';
     let parsedData: any = {};
     try {
@@ -551,13 +620,11 @@ Responde ÚNICAMENTE con el objeto JSON válido.`;
       parsedData = JSON.parse(cleaned);
     }
 
-    // Clean string amounts e.g. "5,000,000" or "$5,000,000"
     if (typeof parsedData.amount === 'string') {
       const cleanVal = parsedData.amount.replace(/[^0-9]/g, '');
       parsedData.amount = parseInt(cleanVal, 10) || 0;
     }
 
-    // Safety checks against truncation or format mismatch
     if (
       !parsedData.amount ||
       parsedData.amount === 0 ||
@@ -569,18 +636,23 @@ Responde ÚNICAMENTE con el objeto JSON válido.`;
         parsedData.amount = baselineData.amount;
       }
     }
+
     if (!parsedData.type || (baselineData.type === 'income' && parsedData.type !== 'income')) {
       parsedData.type = baselineData.type;
     }
+
     if (!parsedData.title || parsedData.title.length < 3 || parsedData.title.startsWith('me gast')) {
       parsedData.title = baselineData.title;
     }
+
     if (!parsedData.destination) {
       parsedData.destination = baselineData.destination;
     }
+
     if (!parsedData.paidByPartnerId) {
       parsedData.paidByPartnerId = baselineData.paidByPartnerId;
     }
+
     if (!parsedData.suggestedDestinations) {
       parsedData.suggestedDestinations = baselineData.suggestedDestinations;
     }

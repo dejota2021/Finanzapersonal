@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Settings, Check, RefreshCw } from 'lucide-react';
+import React from 'react';
+import { Settings, RefreshCw } from 'lucide-react';
 import { ProjectFinanceState } from '../types';
 
 interface NavbarProps {
@@ -24,21 +24,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onUpdateProjectName,
 }) => {
   const { settings } = state;
-  const [localName, setLocalName] = useState(settings.projectName || '');
-  const [isSaved, setIsSaved] = useState(false);
-
-  // Sync if settings update externally
-  useEffect(() => {
-    setLocalName(settings.projectName || '');
-  }, [settings.projectName]);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setLocalName(val);
-    onUpdateProjectName(val);
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 2000);
-  };
 
   return (
     <header
@@ -52,40 +37,19 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
         {/* Left: Custom Geometric Silver Dollar Logo + Editable Page Name */}
         <div className="flex-1 max-w-xl flex items-center gap-2.5">
-          {/* Custom Logo: Geometric Silver $ on Pitch Black Background */}
           <div
             id="brand-custom-logo"
-            className="w-10 h-10 rounded-xl bg-black border border-neutral-700/80 shadow-md shadow-black/60 flex items-center justify-center flex-shrink-0 overflow-hidden select-none transition-all hover:scale-105 hover:border-neutral-500 hover:shadow-neutral-800/40"
+            className="w-10 h-10 rounded-xl bg-black border border-neutral-700/80 shadow-md shadow-black/60 flex items-center justify-center flex-shrink-0 overflow-hidden select-none transition-all hover:scale-105 hover:border-neutral-500"
             title="SISTEMA DE FINANZA"
           >
-            <img
-              src="/logo.jpg"
-              alt="SISTEMA DE FINANZA Logo"
-              className="w-full h-full object-cover"
-              referrerPolicy="no-referrer"
-            />
+            <div className="w-full h-full bg-gradient-to-tr from-amber-500 via-orange-500 to-amber-300 flex items-center justify-center text-neutral-950 font-black text-lg">
+              $
+            </div>
           </div>
-
-          <div className="relative w-full">
-            <input
-              id="page-name-input"
-              type="text"
-              value={localName}
-              onChange={handleChange}
-              placeholder="SISTEMA DE FINANZA"
-              aria-label="Nombre de la página"
-              className={`w-full text-base sm:text-lg font-bold px-3 py-1.5 rounded-xl border transition-all outline-none ${
-                darkMode
-                  ? 'bg-neutral-950/60 border-neutral-700/80 text-white placeholder-neutral-500 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20'
-                  : 'bg-neutral-50 border-neutral-300 text-neutral-900 placeholder-neutral-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20'
-              }`}
-            />
-            {isSaved && (
-              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-emerald-400 flex items-center gap-1 animate-fade-in pointer-events-none">
-                <Check className="w-3.5 h-3.5 stroke-[3]" />
-                <span className="hidden sm:inline text-[11px]">Guardado</span>
-              </span>
-            )}
+          <div className="relative w-full py-1.5">
+            <h1 className="text-base sm:text-lg font-extrabold text-neutral-900 dark:text-neutral-100 truncate">
+              {settings.projectName || 'SISTEMA DE FINANZA'}
+            </h1>
           </div>
         </div>
 

@@ -39,19 +39,52 @@ export interface FinancialSummary {
   }[];
 }
 
+export function deduplicateTransactions(transactions: Transaction[]): Transaction[] {
+  if (!transactions || !Array.isArray(transactions)) return [];
+  const result: Transaction[] = [];
+  for (const tx of transactions) {
+    // Find if already exists by exact id or identical attributes
+    const existingIndex = result.findIndex(
+      (r) =>
+        r.id === tx.id ||
+        (r.title.toLowerCase().trim() === tx.title.toLowerCase().trim() &&
+          Number(r.amount) === Number(tx.amount) &&
+          r.type === tx.type &&
+          r.destination.toLowerCase().trim() === tx.destination.toLowerCase().trim() &&
+          r.date === tx.date)
+    );
+    if (existingIndex === -1) {
+      result.push(tx);
+    } else {
+      // If the new one has voiceRecorded: true or more details, merge them
+      const existing = result[existingIndex];
+      result[existingIndex] = {
+        ...existing,
+        ...tx,
+        voiceRecorded: Boolean(existing.voiceRecorded || tx.voiceRecorded),
+        notes: existing.notes || tx.notes,
+      };
+    }
+  }
+  return result;
+}
+
 export function computeFinancials(
   transactions: Transaction[],
   budgets: BudgetDestination[],
   settings: ProjectSettings
 ): FinancialSummary {
   const [partner1, partner2] = settings.partners;
+
   let totalIncome = 0;
   let totalExpenses = 0;
   let totalDeductible = 0;
+
   let p1PaidExpenses = 0;
   let p2PaidExpenses = 0;
   let p1ReceivedIncome = 0;
   let p2ReceivedIncome = 0;
+
   let p1RequiredExpenseShare = 0;
   let p2RequiredExpenseShare = 0;
 
@@ -69,10 +102,12 @@ export function computeFinancials(
     } else {
       totalExpenses += amount;
       spendingByDestination[tx.destination] = (spendingByDestination[tx.destination] || 0) + amount;
+
       if (tx.isDeductible) {
         const deductibleRate = (tx.deductiblePercentage ?? 100) / 100;
         totalDeductible += amount * deductibleRate;
       }
+
       if (tx.paidBy === partner1.id) {
         p1PaidExpenses += amount;
       } else {
@@ -81,6 +116,7 @@ export function computeFinancials(
 
       const p1Ratio = tx.splitRatio?.[partner1.id] !== undefined ? tx.splitRatio[partner1.id] : partner1.sharePercent;
       const p2Ratio = tx.splitRatio?.[partner2.id] !== undefined ? tx.splitRatio[partner2.id] : partner2.sharePercent;
+
       p1RequiredExpenseShare += amount * (p1Ratio / 100);
       p2RequiredExpenseShare += amount * (p2Ratio / 100);
     }
@@ -338,4 +374,3 @@ export function computeMultiYearSummary(transactions: Transaction[]): MultiYearS
     years,
   };
 }
-

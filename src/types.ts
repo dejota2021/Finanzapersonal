@@ -46,6 +46,7 @@ export interface ProjectSettings {
   currencySymbol: string;
   taxRatePercent: number;
   partners: [Partner, Partner];
+  dailyBudget?: number;
 }
 
 export interface FinanceAttachment {

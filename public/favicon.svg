@@ -1,31 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
-  <defs>
-    <radialGradient id="silverGlow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.35"/>
-      <stop offset="60%" stop-color="#94a3b8" stop-opacity="0.15"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="chromeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="35%" stop-color="#e2e8f0"/>
-      <stop offset="70%" stop-color="#cbd5e1"/>
-      <stop offset="100%" stop-color="#94a3b8"/>
-    </linearGradient>
-    <filter id="backGlow" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="6" result="blur"/>
-      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
-    </filter>
-  </defs>
-  <!-- Pure pitch black background with smooth rounded corners -->
-  <rect width="128" height="128" rx="28" fill="#000000"/>
-  <!-- Ambient white glow center -->
-  <circle cx="64" cy="64" r="50" fill="url(#silverGlow)"/>
-  <!-- Geometric double vertical lines ($) in silver chrome -->
-  <!-- Left vertical bar -->
-  <rect x="52" y="16" width="7" height="96" rx="3.5" fill="url(#chromeGrad)" filter="url(#backGlow)"/>
-  <!-- Right vertical bar -->
-  <rect x="69" y="16" width="7" height="96" rx="3.5" fill="url(#chromeGrad)" filter="url(#backGlow)"/>
-  <!-- Geometric curved S overlay -->
-  <path d="M 88 41 C 88 28, 76 22, 64 22 C 48 22, 38 31, 38 43 C 38 56, 50 62, 64 64 C 78 66, 90 72, 90 85 C 90 98, 78 106, 64 106 C 46 106, 36 96, 36 83" 
-        fill="none" stroke="url(#chromeGrad)" stroke-width="12" stroke-linecap="square" stroke-linejoin="round"/>
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <rect width="32" height="32" fill="black" />
+  <path d="M8 24V12H12V24H8ZM14 24V8H18V24H14ZM20 24V16H24V24H20Z" fill="white" />
 </svg>

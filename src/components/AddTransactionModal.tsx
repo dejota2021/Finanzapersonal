@@ -58,13 +58,14 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       setNotes('');
       setShowAdvanced(false);
     }
-  }, [editingTransaction, budgets, isOpen]);
+  }, [editingTransaction, budgets, isOpen, defaultDate]);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const numAmount = parseFloat(amount);
+
     if (!title.trim()) {
       alert('Por favor indica el concepto o detalle.');
       return;
@@ -85,6 +86,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
         await onAddNewDestination(finalDest);
       }
     }
+
     if (!finalDest) {
       finalDest = 'General';
     }
@@ -226,6 +228,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                 />
               </div>
             </div>
+
             <div>
               <label className="block text-xs font-bold mb-1 flex items-center gap-1">
                 <Calendar className="w-3.5 h-3.5 text-neutral-400" />

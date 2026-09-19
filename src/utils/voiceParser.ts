@@ -72,7 +72,6 @@ export function parseVoiceInput(
     if (digitMillionsMatch) {
       const val = parseFloat(digitMillionsMatch[1].replace(',', '.'));
       amount = Math.round(val * 1000000);
-
       // Check if followed by thousands e.g. "2 millones 500 mil"
       const extraThousandsMatch = lower.match(/mill[oó]n(?:es)?\s*(?:con|y)?\s*(\d+(?:[.,]\d+)?)\s*mil\b/i);
       if (extraThousandsMatch) {
@@ -111,7 +110,6 @@ export function parseVoiceInput(
       [/\b(?:un|uno|una)\s*mill[oó]n\b/i, 1000000],
       [/\bmedio\s*mill[oó]n\b/i, 500000],
     ];
-
     for (const [re, val] of wordMillionsMap) {
       if (re.test(lower)) {
         amount = val;
@@ -135,7 +133,6 @@ export function parseVoiceInput(
     if (digitThousandsMatch) {
       const val = parseFloat(digitThousandsMatch[1].replace(',', '.'));
       amount = Math.round(val * 1000);
-
       // Check for hundreds after mil e.g. "500 mil 200"
       const extraHundreds = lower.match(/\bmil\s*(?:con|y)?\s*(\d{1,3})\b(?!\s*mil|\s*mill)/i);
       if (extraHundreds) {
@@ -178,7 +175,6 @@ export function parseVoiceInput(
       [/\bdos\s*mil\b/i, 2000],
       [/\b(?:un\s*)?mil\b(?!\s*millones)/i, 1000],
     ];
-
     for (const [re, val] of wordThousandsMap) {
       if (re.test(lower)) {
         amount = val;
@@ -200,13 +196,12 @@ export function parseVoiceInput(
     const rawDigitsMatch = lower.match(/\b(\d+(?:[.,]\d+)?)\b/);
     if (rawDigitsMatch) {
       const parsed = parseFloat(rawDigitsMatch[1].replace(',', '.'));
-      // If user says "11" without saying "millones", but it's large context:
       amount = parsed;
     }
   }
 
   // 2. TYPE DETECTION (Income vs Expense)
-  const isIncome = /\b(ingres(?:aron|ó|an|o|os)|recib(?:imos|í|ieron|e)|entr(?:aron|ó|an)|cobr(?:amos|é|ar|o|os)|ganan(?:cia|amos)|aporte[s]?|aport(?:ó|aron)|abon(?:o|os|aron)|ventas?|factur(?:amos|ó)|nos\s+pagaron)\b/i.test(lower);
+  const isIncome = /\b(ingres(?:aron|ó|an|o|os)|recib(?:imos|ó|ieron|e)|entr(?:aron|ó|an)|cobr(?:amos|ó|ar|o|os)|ganan(?:cia|amos)|aporte[s]?|aport(?:ó|aron)|abon(?:o|os|aron)|ventas?|factur(?:amos|ó)|nos\s+pagaron)\b/i.test(lower);
   const type: 'expense' | 'income' = isIncome ? 'income' : 'expense';
 
   // 3. PARTNER DETECTION
@@ -219,7 +214,7 @@ export function parseVoiceInput(
 
   // 4. CLEANING CONCEPT & TITLE
   let cleanText = text
-    .replace(/^(?:se\s+)?(?:ingresaron|ingresó|ingreso|ingresan|entraron|entró|recibimos|recibí|gastamos|me\s+gasté|se\s+gastó|se\s+pagaron|pagamos|pagué|compramos|compré|costó|un\s+cobro\s+de|un\s+pago\s+de|un\s+gasto\s+de|aporte\s+de|abono\s+de|por\s+favor\s+anota|registra|anota)\s+/i, '')
+    .replace(/^(?:se\s+)?(?:ingresaron|ingresó|ingreso|ingresan|entraron|entró|recibimos|recibó|gastamos|me\s+gasté|se\s+gastó|se\s+pagaron|pagamos|pagué|compramos|compró|costó|un\s+cobro\s+de|un\s+pago\s+de|un\s+gasto\s+de|aporte\s+de|abono\s+de|por\s+favor\s+anota|registra|anota)\s+/i, '')
     .replace(/(?:\$\s*)?\b\d{1,3}(?:[,.]\d{3})+\b(?:\s*de\s*pesos)?/gi, '')
     .replace(/(?:once|\d+(?:[.,]\d+)?)\s*mill[oó]n(?:es)?(?:\s*de\s*pesos)?/gi, '')
     .replace(/\b(?:un|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|doce|quince|veinte)\s*millones?(?:\s*de\s*pesos)?/gi, '')
@@ -236,7 +231,6 @@ export function parseVoiceInput(
 
   // Strip leading prefixes: "las de", "los de", "la de", "el de", "lo de", "un de", "una de"
   cleanText = cleanText.replace(/^(?:las|los|la|el|lo|un|una)\s+de\s+/i, '').trim();
-
   // Strip leading prepositions: "en", "de", "para", "por", "con"
   cleanText = cleanText.replace(/^(?:en|de|para|por|con)\s+/i, '').trim();
 
@@ -255,7 +249,6 @@ export function parseVoiceInput(
 
   // 5. DESTINATION / CATEGORY SUGGESTIONS & EXTRACTION
   const suggestedDestinations: string[] = [];
-
   if (/proyecto/i.test(lower)) suggestedDestinations.push('Proyecto');
   if (/efectivo/i.test(lower)) suggestedDestinations.push('Efectivo');
   if (/producci[oó]n|master|mezcla|grabaci[oó]n|estudio/i.test(lower)) suggestedDestinations.push('Producción');

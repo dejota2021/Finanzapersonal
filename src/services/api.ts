@@ -6,7 +6,7 @@ export async function fetchFinances(): Promise<ProjectFinanceState> {
   return res.json();
 }
 
-export async function createTransaction(tx: Omit<Transaction, 'id' | 'createdAt'>): Promise<{ transaction: Transaction; event: SyncEvent }> {
+export async function createTransaction(tx: Partial<Transaction>): Promise<{ transaction: Transaction; event: SyncEvent }> {
   const res = await fetch('/api/finances/transactions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -57,6 +57,18 @@ export async function resetFinances(): Promise<void> {
     headers: { 'Content-Type': 'application/json' },
   });
   if (!res.ok) throw new Error('Error al reiniciar finanzas');
+}
+
+export async function restoreFinances(state: ProjectFinanceState): Promise<void> {
+  try {
+    await fetch('/api/finances/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ state }),
+    });
+  } catch (err) {
+    console.warn('Could not restore state to server', err);
+  }
 }
 
 export async function parseVoiceNote(params: {
@@ -123,11 +135,9 @@ export function subscribeToSync(
 
   function connect() {
     eventSource = new EventSource('/api/sync/events');
-
     eventSource.onopen = () => {
       onStatusChange?.(true);
     };
-
     eventSource.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
@@ -142,7 +152,6 @@ export function subscribeToSync(
         console.warn('Error parsing SSE event', err);
       }
     };
-
     eventSource.onerror = () => {
       onStatusChange?.(false);
       eventSource?.close();

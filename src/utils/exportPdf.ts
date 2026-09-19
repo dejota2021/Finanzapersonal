@@ -53,6 +53,7 @@ export function exportToPdf(state: ProjectFinanceState) {
   // KPI Grid
   const cardWidth = (pageWidth - margin * 2 - 9) / 4;
   const cardHeight = 22;
+
   const kpis = [
     { label: 'INGRESOS TOTALES', val: `+${settings.currencySymbol}${financials.totalIncome.toLocaleString('es-CO')}`, bg: [240, 253, 244], border: [34, 197, 94], text: [22, 101, 52] },
     { label: 'GASTOS TOTALES', val: `-${settings.currencySymbol}${financials.totalExpenses.toLocaleString('es-CO')}`, bg: [254, 242, 242], border: [239, 68, 68], text: [153, 27, 27] },
@@ -66,10 +67,12 @@ export function exportToPdf(state: ProjectFinanceState) {
     doc.setDrawColor(kpi.border[0], kpi.border[1], kpi.border[2]);
     doc.setLineWidth(0.3);
     doc.roundedRect(x, curY, cardWidth, cardHeight, 2, 2, 'FD');
+
     doc.setFontSize(6.5);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(113, 113, 122);
     doc.text(kpi.label, x + 3, curY + 6);
+
     doc.setFontSize(10.5);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(kpi.text[0], kpi.text[1], kpi.text[2]);
@@ -87,15 +90,18 @@ export function exportToPdf(state: ProjectFinanceState) {
     curY += 4;
 
     const budgetColWidth = (pageWidth - margin * 2 - 6) / 2;
+
     financials.destinationProgress.slice(0, 6).forEach((bp, idx) => {
       const col = idx % 2;
       const row = Math.floor(idx / 2);
       const itemX = margin + col * (budgetColWidth + 6);
       const itemY = curY + row * 8.5;
+
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7);
       doc.setTextColor(39, 39, 42);
       doc.text(bp.destination, itemX, itemY + 3);
+
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(6.5);
       doc.setTextColor(113, 113, 122);
@@ -104,6 +110,7 @@ export function exportToPdf(state: ProjectFinanceState) {
 
       doc.setFillColor(228, 228, 231);
       doc.roundedRect(itemX, itemY + 4.5, budgetColWidth, 2, 1, 1, 'F');
+
       const fillWidth = Math.min((bp.spent / (bp.limit || 1)) * budgetColWidth, budgetColWidth);
       doc.setFillColor(245, 158, 11);
       if (fillWidth > 0) {
@@ -123,6 +130,7 @@ export function exportToPdf(state: ProjectFinanceState) {
 
   doc.setFillColor(39, 39, 42);
   doc.rect(margin, curY, pageWidth - margin * 2, 6.5, 'F');
+
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(6.5);
   doc.setFont('helvetica', 'bold');
@@ -131,6 +139,7 @@ export function exportToPdf(state: ProjectFinanceState) {
   doc.text('CONCEPTO / DETALLE', margin + 40, curY + 4.2);
   doc.text('DESTINO', margin + 110, curY + 4.2);
   doc.text('MONTO', pageWidth - margin - 22, curY + 4.2);
+
   curY += 6.5;
 
   const recentTx = transactions.slice(0, 16);
@@ -138,6 +147,7 @@ export function exportToPdf(state: ProjectFinanceState) {
     const isEven = idx % 2 === 0;
     doc.setFillColor(isEven ? 250 : 255, isEven ? 250 : 255, isEven ? 250 : 255);
     doc.rect(margin, curY, pageWidth - margin * 2, 6, 'F');
+
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6.5);
     doc.setTextColor(63, 63, 70);
@@ -162,6 +172,7 @@ export function exportToPdf(state: ProjectFinanceState) {
     doc.setTextColor(tx.type === 'income' ? 22 : 185, tx.type === 'income' ? 101 : 28, tx.type === 'income' ? 52 : 28);
     const amtStr = `${tx.type === 'income' ? '+' : '-'}${settings.currencySymbol}${Number(tx.amount).toLocaleString('es-CO')}`;
     doc.text(amtStr, pageWidth - margin - 2, curY + 4, { align: 'right' });
+
     curY += 6;
   });
 
@@ -174,5 +185,6 @@ export function exportToPdf(state: ProjectFinanceState) {
 
   const cleanName = projectName.replace(/[^a-zA-Z0-9_-]/g, '_');
   const fileName = `${cleanName || 'Reporte'}_Finanzas_${new Date().toISOString().slice(0, 10)}.pdf`;
+
   doc.save(fileName);
 }

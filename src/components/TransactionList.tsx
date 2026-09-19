@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, ArrowUpRight, ArrowDownRight, Trash2, Edit2, Calendar, Mic, Plus, Tag, Check, X } from 'lucide-react';
+import { Search, ArrowUpRight, ArrowDownRight, Trash2, Edit2, Calendar, Mic, Plus, Tag, Check, X, Settings } from 'lucide-react';
 import { Transaction, ProjectSettings, BudgetDestination } from '../types';
 import { formatCurrency } from '../utils/calculations';
 
@@ -13,6 +13,7 @@ interface TransactionListProps {
   onOpenVoiceModal: () => void;
   onOpenAddModal: () => void;
   onOpenDestinations: () => void;
+  onOpenSettings: () => void;
 }
 
 export const TransactionList: React.FC<TransactionListProps> = ({
@@ -25,6 +26,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
   onOpenVoiceModal,
   onOpenAddModal,
   onOpenDestinations,
+  onOpenSettings,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDestination, setSelectedDestination] = useState<string>('all');
@@ -110,18 +112,16 @@ export const TransactionList: React.FC<TransactionListProps> = ({
             <Tag className="w-4 h-4 text-amber-500" />
             <span>Destinos ({allDestinations.length})</span>
           </button>
-
           <button
             id="voice-note-add-btn"
             type="button"
             onClick={onOpenVoiceModal}
-            className="px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-neutral-950 transition-all flex items-center gap-2 shadow-md shadow-amber-500/20 active:scale-95 cursor-pointer"
+            className="hidden md:flex px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-neutral-950 transition-all items-center gap-2 shadow-md shadow-amber-500/20 active:scale-95 cursor-pointer"
             title="Hablar por micrófono para registrar automáticamente con IA"
           >
             <Mic className="w-4 h-4 stroke-[2.5]" />
             <span>Voz con IA</span>
           </button>
-
           <button
             id="manual-add-btn"
             type="button"
@@ -130,6 +130,18 @@ export const TransactionList: React.FC<TransactionListProps> = ({
           >
             <Plus className="w-4 h-4 stroke-[3]" />
             <span>+ Nuevo</span>
+          </button>
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className={`hidden md:flex p-2.5 rounded-xl border transition-colors ${
+              darkMode
+                ? 'bg-neutral-800/90 border-neutral-700 hover:bg-neutral-700 text-neutral-200'
+                : 'bg-neutral-100 border-neutral-300 hover:bg-neutral-200 text-neutral-800'
+            }`}
+            title="Configuración"
+          >
+            <Settings className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -219,7 +231,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                       <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
                     )}
                   </div>
-
                   <div className="min-w-0 space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="text-sm sm:text-base font-extrabold truncate text-current">
@@ -231,7 +242,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                         </span>
                       )}
                     </div>
-
                     <div className="flex items-center gap-2.5 text-xs sm:text-sm text-neutral-400 font-medium flex-wrap">
                       <span
                         className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg font-bold text-xs"
@@ -244,13 +254,11 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                         <Tag className="w-3 h-3" />
                         <span>{tx.destination}</span>
                       </span>
-
                       <span className="flex items-center gap-1 font-mono">
                         <Calendar className="w-3.5 h-3.5" />
                         <span>{tx.date}</span>
                       </span>
                     </div>
-
                     {tx.notes && (
                       <p className="text-xs sm:text-sm text-neutral-400 italic mt-0.5">
                         {tx.notes}
@@ -268,7 +276,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                   >
                     {isExpense ? '-' : '+'}{formatCurrency(tx.amount, sym)}
                   </span>
-
                   <div className="flex items-center gap-1.5">
                     <button
                       id={`edit-tx-${tx.id}`}
@@ -279,7 +286,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                     >
                       <Edit2 className="w-4 h-4" />
                     </button>
-
                     {confirmDeleteId === tx.id ? (
                       <div className="flex items-center gap-1 animate-fade-in">
                         <button

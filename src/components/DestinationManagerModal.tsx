@@ -34,7 +34,6 @@ export const DestinationManagerModal: React.FC<DestinationManagerModalProps> = (
 }) => {
   const [items, setItems] = useState<BudgetDestination[]>(budgets);
   const [newDestName, setNewDestName] = useState('');
-  const [newDestLimit, setNewDestLimit] = useState('');
   const [selectedColor, setSelectedColor] = useState(PALETTE[0]);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -56,7 +55,7 @@ export const DestinationManagerModal: React.FC<DestinationManagerModalProps> = (
     const newItem: BudgetDestination = {
       id: `dest-${Date.now()}`,
       destination: trimmed,
-      monthlyLimit: newDestLimit ? Math.max(0, parseFloat(newDestLimit)) : 0,
+      monthlyLimit: 0,
       color: selectedColor,
       iconName: 'Tag',
       description: 'Destino personalizado',
@@ -65,10 +64,12 @@ export const DestinationManagerModal: React.FC<DestinationManagerModalProps> = (
     const updated = [...items, newItem];
     setItems(updated);
     setNewDestName('');
-    setNewDestLimit('');
-
-    const nextColorIndex = (PALETTE.indexOf(selectedColor) + 1) % PALETTE.length;
-    setSelectedColor(PALETTE[nextColorIndex]);
+    // Better color cycling: get a random color not recently used, or just pick a random one
+    const availableColors = PALETTE.filter((c) => !updated.some(item => item.color === c && item.id !== newItem.id));
+    const randomColor = availableColors.length > 0 
+      ? availableColors[Math.floor(Math.random() * availableColors.length)]
+      : PALETTE[Math.floor(Math.random() * PALETTE.length)];
+    setSelectedColor(randomColor);
   };
 
   const handleDeleteDestination = (id: string) => {
@@ -123,8 +124,8 @@ export const DestinationManagerModal: React.FC<DestinationManagerModalProps> = (
             <Plus className="w-3.5 h-3.5" />
             <span>Crear Nuevo Destino</span>
           </span>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <div className="sm:col-span-2">
+          <div className="grid grid-cols-1 gap-2">
+            <div>
               <input
                 id="new-destination-name-input"
                 type="text"
@@ -138,26 +139,6 @@ export const DestinationManagerModal: React.FC<DestinationManagerModalProps> = (
                   }
                 }}
                 className={`w-full px-3 py-2 rounded-xl text-xs border outline-none font-medium ${
-                  darkMode
-                    ? 'bg-neutral-950 border-neutral-700 text-white focus:border-amber-500'
-                    : 'bg-white border-neutral-300 text-neutral-900 focus:border-amber-500'
-                }`}
-              />
-            </div>
-            <div>
-              <input
-                id="new-destination-limit-input"
-                type="number"
-                placeholder={`Tope opcional (${settings.currencySymbol})`}
-                value={newDestLimit}
-                onChange={(e) => setNewDestLimit(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddDestination();
-                  }
-                }}
-                className={`w-full px-3 py-2 rounded-xl text-xs border outline-none ${
                   darkMode
                     ? 'bg-neutral-950 border-neutral-700 text-white focus:border-amber-500'
                     : 'bg-white border-neutral-300 text-neutral-900 focus:border-amber-500'
@@ -186,6 +167,7 @@ export const DestinationManagerModal: React.FC<DestinationManagerModalProps> = (
                 ))}
               </div>
             </div>
+
             <button
               id="add-destination-btn"
               type="button"
@@ -203,8 +185,8 @@ export const DestinationManagerModal: React.FC<DestinationManagerModalProps> = (
         <div className="mt-4 flex-1 overflow-y-auto space-y-2 pr-1 min-h-[160px] max-h-[260px]">
           <div className="flex items-center justify-between text-xs text-neutral-400 font-semibold px-1">
             <span>Destinos Creados ({items.length})</span>
-            <span>Tope Mensual</span>
           </div>
+
           {items.length === 0 ? (
             <div className="py-8 text-center text-neutral-400 border border-dashed border-neutral-700/50 rounded-xl">
               <Tag className="w-8 h-8 mx-auto mb-2 opacity-30 text-amber-400" />
@@ -222,18 +204,20 @@ export const DestinationManagerModal: React.FC<DestinationManagerModalProps> = (
                 }`}
               >
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div
-                    className="w-3.5 h-3.5 rounded-full flex-shrink-0"
+                  <button
+                    type="button"
+                    className="w-3.5 h-3.5 rounded-full flex-shrink-0 cursor-pointer hover:scale-125 transition-transform"
                     style={{ backgroundColor: item.color }}
+                    onClick={() => {
+                      const nextColorIndex = (PALETTE.indexOf(item.color) + 1) % PALETTE.length;
+                      const newColor = PALETTE[nextColorIndex];
+                      setItems(prev => prev.map(i => i.id === item.id ? {...i, color: newColor} : i));
+                    }}
+                    title="Hacer clic para cambiar color"
                   />
                   <span className="text-xs font-bold truncate">{item.destination}</span>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="text-xs font-mono text-neutral-400">
-                    {item.monthlyLimit > 0
-                      ? `${settings.currencySymbol}${item.monthlyLimit.toLocaleString()}`
-                      : 'Sin límite'}
-                  </span>
                   <button
                     type="button"
                     onClick={() => handleDeleteDestination(item.id)}

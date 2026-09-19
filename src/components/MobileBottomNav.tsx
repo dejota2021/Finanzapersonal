@@ -19,8 +19,10 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   return (
     <nav
       id="mobile-bottom-bar"
-      className={`sm:hidden fixed bottom-0 left-0 right-0 z-40 border-t backdrop-blur-xl px-3 py-1.5 flex items-center justify-around ${
-        darkMode ? 'bg-neutral-950/95 border-neutral-800 text-neutral-400' : 'bg-white/95 border-neutral-200 text-neutral-600'
+      className={`fixed bottom-0 left-0 right-0 sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-lg sm:rounded-2xl sm:border sm:shadow-2xl sm:shadow-black/60 z-60 border-t backdrop-blur-xl px-4 py-2 flex items-center justify-around ${
+        darkMode
+          ? 'bg-neutral-950/90 border-neutral-800 text-neutral-400 sm:border-neutral-800'
+          : 'bg-white/90 border-neutral-200 text-neutral-600 sm:border-neutral-200'
       }`}
     >
       <button
@@ -36,15 +38,15 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
       </button>
 
       <button
-        id="mobile-tab-transactions"
+        id="mobile-tab-charts"
         type="button"
-        onClick={() => onSelectTab('transactions')}
+        onClick={() => onSelectTab('charts')}
         className={`flex flex-col items-center py-1 px-2 text-xs font-bold transition-colors cursor-pointer ${
-          currentTab === 'transactions' ? 'text-amber-500' : 'hover:text-current'
+          currentTab === 'charts' ? 'text-amber-500' : 'hover:text-current'
         }`}
       >
-        <ListFilter className="w-5 h-5 mb-0.5" />
-        <span>Movs</span>
+        <BarChart3 className="w-5 h-5 mb-0.5" />
+        <span>Gráficos</span>
       </button>
 
       {/* Floating Center Voice Button for Mobile Quick Access */}
@@ -62,22 +64,24 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
       </div>
 
       <button
-        id="mobile-tab-charts"
+        id="mobile-tab-transactions"
         type="button"
-        onClick={() => onSelectTab('charts')}
+        onClick={() => onSelectTab('transactions')}
         className={`flex flex-col items-center py-1 px-2 text-xs font-bold transition-colors cursor-pointer ${
-          currentTab === 'charts' ? 'text-amber-500' : 'hover:text-current'
+          currentTab === 'transactions' ? 'text-amber-500' : 'hover:text-current'
         }`}
       >
-        <BarChart3 className="w-5 h-5 mb-0.5" />
-        <span>Gráficos</span>
+        <ListFilter className="w-5 h-5 mb-0.5" />
+        <span>Movs</span>
       </button>
 
       <button
         id="mobile-tab-settings"
         type="button"
-        onClick={onOpenSettings}
-        className="flex flex-col items-center py-1 px-2 text-xs font-bold transition-colors hover:text-current cursor-pointer"
+        onClick={() => onSelectTab('settings')}
+        className={`flex flex-col items-center py-1 px-2 text-xs font-bold transition-colors cursor-pointer ${
+          currentTab === 'settings' ? 'text-amber-500' : 'hover:text-current'
+        }`}
       >
         <Settings className="w-5 h-5 mb-0.5" />
         <span>Ajustes</span>

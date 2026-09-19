@@ -9,7 +9,6 @@ import {
   Volume2,
   AlertCircle,
   RotateCcw,
-  Edit3,
   ArrowDownRight,
   ArrowUpRight,
 } from 'lucide-react';
@@ -17,6 +16,7 @@ import { ProjectSettings, BudgetDestination, Transaction } from '../types';
 import { parseVoiceNote } from '../services/api';
 import { parseVoiceInput } from '../utils/voiceParser';
 import { playVoiceStartSound, playVoiceSuccessSound } from '../utils/soundEffects';
+import { getMicrophoneStream, pauseMicrophoneStream } from '../utils/microphoneManager';
 
 interface VoiceExpenseModalProps {
   isOpen: boolean;
@@ -43,6 +43,7 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
   const [micVolume, setMicVolume] = useState<number>(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Extracted Data Form
   const [extractedData, setExtractedData] = useState<{
@@ -90,7 +91,6 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
     isManuallyStoppedRef.current = false;
     isRecordingRef.current = true;
     setIsRecording(true);
-
     playVoiceStartSound();
 
     // 1. Web Speech API with Colombian Spanish prioritized
@@ -100,7 +100,6 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
     if (SpeechRecognition) {
       try {
         const recognition = new SpeechRecognition();
-        // Priority to Colombian Spanish for local currency terms and phonetics
         recognition.lang = 'es-CO';
         recognition.continuous = true;
         recognition.interimResults = true;
@@ -121,7 +120,6 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
           setTranscript(accumulatedFinal);
           setInterimText(interim);
 
-          // Auto-stop after 2.8s of silence once words have been spoken
           if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
           if (accumulatedFinal.trim().length > 6) {
             silenceTimerRef.current = setTimeout(() => {
@@ -139,7 +137,6 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
         };
 
         recognition.onend = () => {
-          // If still recording and not manually stopped, auto-restart to prevent timeout silence aborts
           if (!isManuallyStoppedRef.current && recognitionRef.current && isRecordingRef.current) {
             try {
               recognition.start();
@@ -156,28 +153,23 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
 
     // 2. High Quality MediaRecorder + Web Audio Visualizer
     try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-        });
-
-        // Setup real-time audio volume visualizer
-        try {
+      const stream = await getMicrophoneStream();
+      try {
+        if (!audioContextRef.current) {
           const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
           const audioCtx = new AudioContextClass();
           const source = audioCtx.createMediaStreamSource(stream);
           const analyser = audioCtx.createAnalyser();
           analyser.fftSize = 64;
           source.connect(analyser);
-
           audioContextRef.current = audioCtx;
           analyserRef.current = analyser;
+        } else if (audioContextRef.current.state === 'suspended') {
+          audioContextRef.current.resume();
+        }
 
-          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        if (analyserRef.current && !animFrameRef.current) {
+          const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
           const checkVolume = () => {
             if (!analyserRef.current) return;
             analyserRef.current.getByteFrequencyData(dataArray);
@@ -190,10 +182,12 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
             animFrameRef.current = requestAnimationFrame(checkVolume);
           };
           checkVolume();
-        } catch (e) {
-          console.warn('AudioAnalyser visualizer error:', e);
         }
+      } catch (e) {
+        console.warn('AudioAnalyser visualizer error:', e);
+      }
 
+      if (window.MediaRecorder) {
         const mediaRecorder = new MediaRecorder(stream);
         mediaRecorderRef.current = mediaRecorder;
         mediaRecorder.ondataavailable = (event) => {
@@ -205,6 +199,7 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
       }
     } catch (err) {
       console.warn('Microphone stream error:', err);
+      setParseError('Permiso de micrófono no otorgado. Puedes escribir los datos directamente en el recuadro.');
     }
   };
 
@@ -229,13 +224,16 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
     const mimeType = 'audio/webm';
 
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
-
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {}
+      pauseMicrophoneStream();
       if (audioChunksRef.current.length > 0) {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         audioBase64 = await blobToBase64(audioBlob);
       }
+    } else {
+      pauseMicrophoneStream();
     }
 
     const fullSpokenText = [transcript, interimText].filter(Boolean).join(' ').trim();
@@ -244,11 +242,9 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
       setInterimText('');
     }
 
-    // Process with Gemini AI + Colombian NLP parser
     processVoice(fullSpokenText, audioBase64, mimeType);
   };
 
-  // Auto-start recording immediately when the modal opens
   useEffect(() => {
     let autoStartTimer: any;
     if (isOpen) {
@@ -261,6 +257,7 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
         silenceTimerRef.current = null;
       }
       stopRecording();
+      pauseMicrophoneStream();
       setTranscript('');
       setInterimText('');
       setExtractedData(null);
@@ -268,7 +265,6 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
       setIsProcessing(false);
       setMicVolume(0);
     }
-
     return () => {
       if (autoStartTimer) clearTimeout(autoStartTimer);
       if (silenceTimerRef.current) {
@@ -278,10 +274,10 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
     };
   }, [isOpen]);
 
-  // Clean up on unmount
   useEffect(() => {
     return () => {
       stopAudioAnalyser();
+      pauseMicrophoneStream();
       if (silenceTimerRef.current) {
         clearTimeout(silenceTimerRef.current);
       }
@@ -312,11 +308,9 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
       setParseError('No se detectó voz ni audio. Habla claro cerca del micrófono o escribe en el recuadro.');
       return;
     }
-
     setIsProcessing(true);
     setParseError(null);
 
-    // 1. High-precision rule-based Colombian baseline parser
     const baseline = parseVoiceInput(rawText, budgets, settings.partners);
 
     try {
@@ -328,8 +322,6 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
 
       if (response && response.data) {
         const d = response.data;
-
-        // Ensure numbers and millions are not truncated or string formatted (e.g. "5,000,000" or 5)
         let finalAmount = 0;
         if (typeof d.amount === 'number' && !isNaN(d.amount)) {
           finalAmount = d.amount;
@@ -338,7 +330,6 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
           finalAmount = parseInt(cleanStr, 10) || 0;
         }
 
-        // If AI truncated to single digit or small number e.g. 5, but baseline detected 5,000,000
         if (
           !finalAmount ||
           finalAmount === 0 ||
@@ -349,13 +340,11 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
           finalAmount = baseline.amount;
         }
 
-        // Ensure type accuracy (income vs expense)
         let finalType: 'expense' | 'income' = d.type || baseline.type;
         if (baseline.type === 'income') {
           finalType = 'income';
         }
 
-        // Clean title
         let finalTitle = d.title;
         if (!finalTitle || finalTitle.length < 3 || finalTitle.toLowerCase().startsWith('me gast')) {
           finalTitle = baseline.title;
@@ -365,6 +354,7 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
         const finalPaidBy = 'general';
 
         playVoiceSuccessSound();
+
         setExtractedData({
           title: finalTitle,
           amount: finalAmount,
@@ -410,39 +400,44 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
   };
 
   const handleSave = async () => {
+    if (isSaving) return;
     if (!extractedData) return;
     if (extractedData.amount <= 0) {
       alert('Por favor ingresa un monto válido mayor a 0');
       return;
     }
-
-    const finalDest = extractedData.destination?.trim() || 'Proyecto';
-
-    if (onAddNewDestination && !budgets.some((b) => b.destination.toLowerCase() === finalDest.toLowerCase())) {
-      try {
-        await onAddNewDestination(finalDest);
-      } catch (err) {
-        console.warn('Error auto-adding destination', err);
+    setIsSaving(true);
+    try {
+      const finalDest = extractedData.destination?.trim() || 'Proyecto';
+      if (onAddNewDestination && !budgets.some((b) => b.destination.toLowerCase() === finalDest.toLowerCase())) {
+        try {
+          await onAddNewDestination(finalDest);
+        } catch (err) {
+          console.warn('Error auto-adding destination', err);
+        }
       }
+
+      await onSaveTransaction({
+        title: extractedData.title,
+        amount: extractedData.amount,
+        type: extractedData.type,
+        destination: finalDest,
+        isDeductible: false,
+        deductiblePercentage: 0,
+        paidBy: extractedData.paidBy || 'general',
+        splitRatio: {
+          general: 100,
+        },
+        date: new Date().toISOString().slice(0, 10),
+        notes: extractedData.notes,
+        voiceRecorded: true,
+      });
+      onClose();
+    } catch (err: any) {
+      alert('Error al guardar: ' + (err.message || err));
+    } finally {
+      setIsSaving(false);
     }
-
-    await onSaveTransaction({
-      title: extractedData.title,
-      amount: extractedData.amount,
-      type: extractedData.type,
-      destination: finalDest,
-      isDeductible: false,
-      deductiblePercentage: 0,
-      paidBy: extractedData.paidBy || 'general',
-      splitRatio: {
-        general: 100,
-      },
-      date: new Date().toISOString().slice(0, 10),
-      notes: extractedData.notes,
-      voiceRecorded: true,
-    });
-
-    onClose();
   };
 
   if (!isOpen) return null;
@@ -484,7 +479,6 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
         {/* Center Recording Area */}
         <div className="py-4 flex flex-col items-center text-center space-y-3">
           <div className="relative">
-            {/* Visual audio pulse & waves */}
             {isRecording && (
               <>
                 <div
@@ -497,7 +491,6 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
                 />
               </>
             )}
-
             <button
               id="record-mic-toggle-btn"
               type="button"
@@ -525,7 +518,6 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
                 : 'Presiona el micrófono para hablar'}
             </p>
 
-            {/* Mic volume bar during recording */}
             {isRecording && (
               <div className="space-y-2 mt-1">
                 <div className="w-36 h-1.5 bg-neutral-800 rounded-full mx-auto overflow-hidden">
@@ -608,7 +600,7 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
           )}
         </div>
 
-        {/* Extracted Structured Data Form (Quick review before saving) */}
+        {/* Extracted Structured Data Form */}
         {extractedData && (
           <div
             className={`p-4 rounded-xl border space-y-3.5 animate-fade-in ${
@@ -629,7 +621,7 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
               </button>
             </div>
 
-            {/* Movement Type Toggle: Gasto vs Ingreso */}
+            {/* Movement Type Toggle */}
             <div>
               <label className="block text-neutral-400 font-semibold mb-1 text-xs">Tipo de Movimiento</label>
               <div className="grid grid-cols-2 gap-2">
@@ -662,23 +654,23 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
               {/* Concept / Title */}
               <div className="sm:col-span-2">
-                <label className="block text-neutral-400 font-semibold mb-1">Concepto / Detalle</label>
+                <label className="block text-neutral-400 font-semibold mb-1.5">Concepto / Detalle</label>
                 <input
                   type="text"
                   id="voice-extracted-title"
                   value={extractedData.title}
                   onChange={(e) => setExtractedData({ ...extractedData, title: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg bg-neutral-900 border border-neutral-700 text-white font-medium focus:border-amber-500 outline-none"
+                  className="w-full px-4 py-3 rounded-lg bg-neutral-900 border border-neutral-700 text-white font-medium focus:border-amber-500 outline-none scroll-m-20"
                   placeholder="Ej: Efectivo para el proyecto"
                 />
               </div>
 
               {/* Amount */}
               <div>
-                <label className="block text-neutral-400 font-semibold mb-1">
+                <label className="block text-neutral-400 font-semibold mb-1.5">
                   Monto ({settings.currencySymbol})
                 </label>
                 <input
@@ -687,16 +679,16 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
                   step="any"
                   value={extractedData.amount}
                   onChange={(e) => setExtractedData({ ...extractedData, amount: Number(e.target.value) })}
-                  className="w-full px-3 py-2 rounded-lg bg-neutral-900 border border-neutral-700 text-white font-bold font-mono focus:border-amber-500 outline-none text-sm"
+                  className="w-full px-4 py-3 rounded-lg bg-neutral-900 border border-neutral-700 text-white font-bold font-mono focus:border-amber-500 outline-none text-sm scroll-m-20"
                 />
-                <div className="text-[11px] text-amber-400 font-mono mt-1 font-semibold">
+                <div className="text-[11px] text-amber-400 font-mono mt-1.5 font-semibold">
                   {settings.currencySymbol} {Number(extractedData.amount || 0).toLocaleString('es-CO')} {settings.currency}
                 </div>
               </div>
 
               {/* Destination / Category */}
               <div>
-                <label className="block text-neutral-400 font-semibold mb-1">Destino / Categoría</label>
+                <label className="block text-neutral-400 font-semibold mb-1.5">Destino / Categoría</label>
                 <input
                   type="text"
                   id="voice-extracted-dest"
@@ -704,7 +696,7 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
                   value={extractedData.destination}
                   onChange={(e) => setExtractedData({ ...extractedData, destination: e.target.value })}
                   placeholder="Escribe o selecciona..."
-                  className="w-full px-3 py-2 rounded-lg bg-neutral-900 border border-neutral-700 text-white font-medium focus:border-amber-500 outline-none text-xs"
+                  className="w-full px-4 py-3 rounded-lg bg-neutral-900 border border-neutral-700 text-white font-medium focus:border-amber-500 outline-none text-xs scroll-m-20"
                 />
                 <datalist id="voice-dest-list">
                   {budgets.map((b) => (
@@ -750,11 +742,25 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
               <button
                 id="confirm-voice-expense-btn"
                 type="button"
+                disabled={isSaving}
                 onClick={handleSave}
-                className="px-5 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-neutral-950 flex items-center gap-1.5 shadow-lg shadow-amber-500/20 transition-all hover:scale-[1.02] active:scale-98 cursor-pointer"
+                className={`px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg transition-all ${
+                  isSaving
+                    ? 'bg-amber-500/50 text-neutral-900 cursor-not-allowed'
+                    : 'bg-amber-500 hover:bg-amber-400 text-neutral-950 shadow-amber-500/20 hover:scale-[1.02] active:scale-98 cursor-pointer'
+                }`}
               >
-                <Check className="w-4 h-4 stroke-[3]" />
-                <span>Confirmar y Guardar Movimiento</span>
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Guardando movimiento...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4 stroke-[3]" />
+                    <span>Confirmar y Guardar Movimiento</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

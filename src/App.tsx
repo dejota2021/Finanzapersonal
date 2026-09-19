@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Navbar } from './components/Navbar';
 import { FinancialSummaryCards } from './components/FinancialSummaryCards';
 import { ChartsView } from './components/ChartsView';
 import { TransactionList } from './components/TransactionList';
@@ -9,6 +8,7 @@ import { DestinationManagerModal } from './components/DestinationManagerModal';
 import { SettingsModal } from './components/SettingsModal';
 import { PushNotificationToast } from './components/PushNotificationToast';
 import { MobileBottomNav } from './components/MobileBottomNav';
+import { DesktopDashboard } from './components/DesktopDashboard';
 import {
   fetchFinances,
   fetchVersion,
@@ -18,39 +18,55 @@ import {
   saveBudgets,
   saveSettings,
   resetFinances,
+  restoreFinances,
   subscribeToSync,
 } from './services/api';
 import {
   computeFinancials,
   filterTransactionsByPeriod,
   getAvailableYears,
-  MONTHS_ES,
+  deduplicateTransactions,
 } from './utils/calculations';
 import { exportToExcel } from './utils/exportExcel';
 import { exportToPdf } from './utils/exportPdf';
 import { playPushChime } from './utils/soundEffects';
 import { ProjectFinanceState, Transaction, BudgetDestination, ProjectSettings, SyncEvent } from './types';
-import { Loader2, Calendar, Sliders, X } from 'lucide-react';
+import { Loader2, Sliders } from 'lucide-react';
+
+const STORAGE_KEY = 'sistema_finanzas_state_v1';
+
+function getInitialLocalState(): ProjectFinanceState | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.settings) {
+        if (parsed.transactions && Array.isArray(parsed.transactions)) {
+          parsed.transactions = deduplicateTransactions(parsed.transactions);
+        }
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn('Error parsing cached local finance state', e);
+  }
+  return null;
+}
 
 export default function App() {
-  const [state, setState] = useState<ProjectFinanceState | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [state, setState] = useState<ProjectFinanceState | null>(() => getInitialLocalState());
+  const [isLoading, setIsLoading] = useState(() => getInitialLocalState() === null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Month & Year Sheets Filter State (managed via SettingsModal)
+  // Month & Year Filter State
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState<number | null>(null); // null = Todo el año / histórico
+  const [selectedMonth, setSelectedMonth] = useState<number | null>(null); // null = Todo el año
 
   // Dark mode
-  const [darkMode, setDarkMode] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('app_dark_mode');
-      return saved !== null ? saved === 'true' : true;
-    }
-    return true;
-  });
+  const [darkMode, setDarkMode] = useState<boolean>(true);
 
   // Realtime Cloud Sync Status & Active Users Online
   const [isSynced, setIsSynced] = useState<boolean>(true);
@@ -83,22 +99,61 @@ export default function App() {
     }
   }, [darkMode]);
 
+  // Persist state to local storage on any change
+  useEffect(() => {
+    if (state && typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch (err) {
+        console.warn('Error saving state to localStorage', err);
+      }
+    }
+  }, [state]);
+
   // Initial and reactive data load
   const loadData = useCallback(async (silent = false) => {
-    if (!silent) setIsLoading(true);
+    const localCached = getInitialLocalState();
+    if (!silent && !localCached) setIsLoading(true);
     else setIsRefreshing(true);
+
     try {
-      const data = await fetchFinances();
-      setState(data);
-      if (data.lastUpdated) {
-        lastUpdatedRef.current = data.lastUpdated;
+      const serverData = await fetchFinances();
+      if (serverData.transactions && Array.isArray(serverData.transactions)) {
+        serverData.transactions = deduplicateTransactions(serverData.transactions);
+      }
+      const localData = getInitialLocalState();
+
+      // Check if server is blank but user had manual data locally
+      const serverIsEmpty = (!serverData.transactions || serverData.transactions.length === 0) &&
+        (!serverData.settings.dailyBudget || serverData.settings.dailyBudget === 0);
+      const localHasData = localData && (
+        (localData.transactions && localData.transactions.length > 0) ||
+        (localData.settings && localData.settings.dailyBudget && localData.settings.dailyBudget > 0)
+      );
+
+      if (serverIsEmpty && localHasData) {
+        setState(localData);
+        await restoreFinances(localData);
+      } else {
+        setState(serverData);
+      }
+
+      if (serverData.lastUpdated) {
+        lastUpdatedRef.current = serverData.lastUpdated;
       }
       setIsSynced(true);
       setError(null);
     } catch (err: any) {
-      console.error('Failed to load finances data:', err);
-      setError(err.message || 'No se pudo cargar la información');
-      setIsSynced(false);
+      console.warn('Failed to load finances from server, keeping local data:', err);
+      const local = getInitialLocalState();
+      if (local) {
+        setState(local);
+        setIsSynced(true);
+        setError(null);
+      } else {
+        setError(err.message || 'No se pudo cargar la información');
+        setIsSynced(false);
+      }
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -113,7 +168,6 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = subscribeToSync((event: SyncEvent) => {
       setIsSynced(true);
-
       if (event.type === 'USER_ONLINE_COUNT') {
         if (event.data?.count) {
           setOnlineCount(event.data.count);
@@ -128,15 +182,33 @@ export default function App() {
         setState((prev) => {
           if (!prev) return prev;
           const updatedTx = event.data as Transaction;
-          const exists = prev.transactions.some((t) => t.id === updatedTx.id);
-          const newTxList = exists
-            ? prev.transactions.map((t) => (t.id === updatedTx.id ? updatedTx : t))
-            : [updatedTx, ...prev.transactions];
-          return {
+          const existingIndex = prev.transactions.findIndex(
+            (t) =>
+              t.id === updatedTx.id ||
+              (t.title === updatedTx.title &&
+                Number(t.amount) === Number(updatedTx.amount) &&
+                t.destination === updatedTx.destination &&
+                t.type === updatedTx.type &&
+                Math.abs(new Date(t.createdAt).getTime() - new Date(updatedTx.createdAt).getTime()) < 15000)
+          );
+
+          let newTxList: Transaction[];
+          if (existingIndex !== -1) {
+            newTxList = [...prev.transactions];
+            newTxList[existingIndex] = updatedTx;
+          } else {
+            newTxList = [updatedTx, ...prev.transactions];
+          }
+
+          const next = {
             ...prev,
             transactions: newTxList,
             lastUpdated: event.timestamp || new Date().toISOString(),
           };
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+          } catch {}
+          return next;
         });
       } else if (event.type === 'TRANSACTION_DELETED') {
         setState((prev) => {
@@ -216,7 +288,6 @@ export default function App() {
   const periodTransactions = useMemo(() => {
     if (!state) return [];
     if (selectedMonth === null) {
-      // If no month is selected, return all transactions for selected year
       return state.transactions.filter((t) => {
         const y = new Date(t.date).getFullYear();
         return y === selectedYear;
@@ -235,14 +306,14 @@ export default function App() {
         totalDeductible: 0,
         estimatedTaxSavings: 0,
         partner1Stats: {
-          partner: { id: 'p1', name: 'Deivid', sharePercent: 50, role: 'socio', color: '#3b82f6', avatarBg: 'bg-blue-500' },
+          partner: { id: 'p1', name: 'Socio 1', sharePercent: 50, role: 'socio', color: '#f59e0b', avatarBg: 'bg-amber-500' },
           totalPaid: 0,
           totalReceived: 0,
           requiredExpenseShare: 0,
           netBalance: 0,
         },
         partner2Stats: {
-          partner: { id: 'p2', name: 'Jota', sharePercent: 50, role: 'socio', color: '#f59e0b', avatarBg: 'bg-amber-500' },
+          partner: { id: 'p2', name: 'Socio 2', sharePercent: 50, role: 'socio', color: '#8b5cf6', avatarBg: 'bg-purple-500' },
           totalPaid: 0,
           totalReceived: 0,
           requiredExpenseShare: 0,
@@ -265,9 +336,57 @@ export default function App() {
   // Handlers
   const handleSaveTransaction = async (txData: Partial<Transaction>) => {
     if (editingTransaction) {
+      const updatedTx: Transaction = {
+        ...editingTransaction,
+        ...txData,
+      } as Transaction;
+
+      setState((prev) => {
+        if (!prev) return prev;
+        const next = {
+          ...prev,
+          transactions: prev.transactions.map((t) => (t.id === updatedTx.id ? updatedTx : t)),
+          lastUpdated: new Date().toISOString(),
+        };
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
       await updateTransaction(editingTransaction.id, txData);
     } else {
-      await createTransaction(txData as Omit<Transaction, 'id' | 'createdAt'>);
+      const canonicalId = txData.id || `tx-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const newTx: Transaction = {
+        id: canonicalId,
+        title: txData.title || 'Movimiento',
+        amount: Number(txData.amount) || 0,
+        type: txData.type || 'expense',
+        date: txData.date || new Date().toISOString().split('T')[0],
+        destination: txData.destination || 'General',
+        paidBy: txData.paidBy || 'general',
+        splitRatio: txData.splitRatio || { general: 100 },
+        isDeductible: txData.isDeductible || false,
+        deductiblePercentage: txData.deductiblePercentage || 0,
+        createdAt: new Date().toISOString(),
+        notes: txData.notes,
+        voiceRecorded: Boolean(txData.voiceRecorded),
+      };
+
+      setState((prev) => {
+        if (!prev) return prev;
+        const next = {
+          ...prev,
+          transactions: deduplicateTransactions([newTx, ...prev.transactions]),
+          lastUpdated: new Date().toISOString(),
+        };
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      await createTransaction(newTx);
     }
   };
 
@@ -277,18 +396,68 @@ export default function App() {
   };
 
   const handleDeleteTransaction = async (id: string) => {
+    setState((prev) => {
+      if (!prev) return prev;
+      const next = {
+        ...prev,
+        transactions: prev.transactions.filter((t) => t.id !== id),
+        lastUpdated: new Date().toISOString(),
+      };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
     await deleteTransaction(id);
   };
 
   const handleSaveBudgets = async (newBudgets: BudgetDestination[]) => {
+    setState((prev) => {
+      if (!prev) return prev;
+      const next = {
+        ...prev,
+        budgets: newBudgets,
+        lastUpdated: new Date().toISOString(),
+      };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
     await saveBudgets(newBudgets);
   };
 
   const handleSaveSettings = async (newSettings: ProjectSettings) => {
+    setState((prev) => {
+      if (!prev) return prev;
+      const next = {
+        ...prev,
+        settings: newSettings,
+        lastUpdated: new Date().toISOString(),
+      };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
     await saveSettings(newSettings);
   };
 
   const handleResetAll = async () => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch {}
+    }
+    setState((prev) => {
+      if (!prev) return prev;
+      const next = {
+        ...prev,
+        transactions: [],
+        lastUpdated: new Date().toISOString(),
+      };
+      return next;
+    });
     await resetFinances();
   };
 
@@ -318,7 +487,7 @@ export default function App() {
       const newBudget: BudgetDestination = {
         id: `dest-${Date.now()}`,
         destination: destinationName,
-        monthlyLimit: 1000000,
+        monthlyLimit: 0,
         color: '#f59e0b',
         iconName: 'Tag',
       };
@@ -379,75 +548,37 @@ export default function App() {
   return (
     <div
       id="app-root-container"
-      className={`min-h-screen transition-colors ${
-        darkMode ? 'bg-neutral-950 text-neutral-100' : 'bg-neutral-100 text-neutral-900'
-      } pb-24 sm:pb-12`}
+      className="min-h-screen bg-black text-neutral-100 pb-24 sm:pb-32"
     >
-      {/* Top Navbar */}
-      <Navbar
-        state={state}
+      {/* Real-time Push Notification Banner & Sound Chime */}
+      <PushNotificationToast
+        currentEvent={currentSyncEvent}
+        onDismiss={() => setCurrentSyncEvent(null)}
         darkMode={darkMode}
-        isSynced={isSynced}
-        isRefreshing={isRefreshing}
-        onlineCount={onlineCount}
-        onRefresh={() => loadData(false)}
-        onOpenSettings={() => setIsSettingsModalOpen(true)}
-        onUpdateProjectName={handleUpdateProjectName}
       />
 
-      {/* Main Container */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 space-y-4 sm:space-y-5">
-        {/* Active Period Filter Indicator (if user filtered by a specific month/year) */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-4 rounded-2xl bg-white dark:bg-neutral-900/80 border border-neutral-200 dark:border-neutral-800 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-500 flex items-center justify-center flex-shrink-0">
-              <Calendar className="w-5 h-5 stroke-[2.5]" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-bold uppercase tracking-wider text-neutral-400">
-                  Periodo Visualizado:
-                </span>
-                <span className="text-sm sm:text-base font-extrabold text-amber-500">
-                  {selectedMonth
-                    ? `${MONTHS_ES[selectedMonth - 1]} de ${selectedYear}`
-                    : `Todo el Año ${selectedYear}`}
-                </span>
-              </div>
-              <p className="text-xs text-neutral-400 font-medium">
-                {periodTransactions.length} movimiento(s) en este periodo
-              </p>
-            </div>
-          </div>
+      {/* Desktop View */}
+      <DesktopDashboard
+        state={state}
+        financials={financials}
+        periodTransactions={periodTransactions}
+        darkMode={darkMode}
+        onEditTransaction={handleEditTransaction}
+        onDeleteTransaction={handleDeleteTransaction}
+        onOpenVoiceModal={() => setIsVoiceModalOpen(true)}
+        onOpenAddModal={() => {
+          setEditingTransaction(null);
+          setIsAddModalOpen(true);
+        }}
+        onOpenDestinations={() => setIsDestinationsModalOpen(true)}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
+      />
 
-          <div className="flex items-center gap-2">
-            {selectedMonth !== null && (
-              <button
-                type="button"
-                onClick={() => setSelectedMonth(null)}
-                className="px-3 py-1.5 rounded-xl text-xs font-bold border border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors flex items-center gap-1 cursor-pointer"
-                title="Ver todos los meses del año"
-              >
-                <X className="w-3.5 h-3.5" />
-                <span>Ver Todo el Año</span>
-              </button>
-            )}
 
-            <button
-              id="open-period-settings-btn"
-              type="button"
-              onClick={() => setIsSettingsModalOpen(true)}
-              className="px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 border border-neutral-300 dark:border-neutral-700 transition-all flex items-center gap-1.5 cursor-pointer"
-              title="Cambiar mes o consultar consolidado histórico"
-            >
-              <Sliders className="w-3.5 h-3.5 text-amber-500" />
-              <span>Cambiar Hoja / Periodo</span>
-            </button>
-          </div>
-        </div>
-
-        {/* 1. Financial Summary Cards */}
-        <div className={`${mobileTab === 'overview' ? 'block' : 'hidden sm:block'}`}>
+      {/* Mobile View */}
+      <main className="md:hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-8 space-y-6 sm:space-y-8">
+        {/* 1. Financial Summary Cards (Overview / Resumen) */}
+        <div className={`${mobileTab === 'overview' ? 'block' : 'hidden'}`}>
           <FinancialSummaryCards
             financials={financials}
             settings={state.settings}
@@ -457,7 +588,13 @@ export default function App() {
         </div>
 
         {/* 2. Visual Charts */}
-        <div className={`${mobileTab === 'charts' || mobileTab === 'overview' ? 'block' : 'hidden sm:block'}`}>
+        <div className={`${mobileTab === 'charts' ? 'block' : 'hidden'}`}>
+          <div className="pt-4 pb-2">
+            <h2 className="text-lg sm:text-xl font-black text-white uppercase tracking-wider font-mono">
+              Análisis y Gráficos
+            </h2>
+            <p className="text-xs text-neutral-500 font-bold">Distribución y evolución mensual de tus finanzas</p>
+          </div>
           <ChartsView
             financials={financials}
             settings={state.settings}
@@ -467,7 +604,7 @@ export default function App() {
         </div>
 
         {/* 3. Transaction List */}
-        <div className={`${mobileTab === 'transactions' || mobileTab === 'overview' ? 'block' : 'hidden sm:block'}`}>
+        <div className={`${mobileTab === 'transactions' ? 'block' : 'hidden'}`}>
           <TransactionList
             transactions={periodTransactions}
             settings={state.settings}
@@ -483,29 +620,45 @@ export default function App() {
             onOpenDestinations={() => setIsDestinationsModalOpen(true)}
           />
         </div>
+
+        {/* 4. Settings View */}
+        <div className={`${mobileTab === 'settings' ? 'block' : 'hidden'}`}>
+          <SettingsModal
+            isOpen={true}
+            onClose={() => setMobileTab('overview')}
+            settings={state.settings}
+            transactions={state.transactions}
+            selectedYear={selectedYear}
+            selectedMonth={selectedMonth}
+            onSelectPeriod={(year, month) => {
+              setSelectedYear(year);
+              setSelectedMonth(month);
+            }}
+            availableYears={availableYears}
+            darkMode={darkMode}
+            setDarkMode={setDarkMode}
+            isRefreshing={isRefreshing}
+            onRefresh={() => loadData(true)}
+            onExportExcel={handleExportExcel}
+            onExportPdf={handleExportPdf}
+            onSaveSettings={handleSaveSettings}
+            onResetAll={handleResetAll}
+          />
+        </div>
       </main>
 
-      {/* Real-time Push Notification Banner & Sound Chime */}
-      <PushNotificationToast
-        currentEvent={currentSyncEvent}
-        onDismiss={() => setCurrentSyncEvent(null)}
-        darkMode={darkMode}
-      />
-
       {/* Mobile Bottom Navigation */}
-      <MobileBottomNav
-        currentTab={mobileTab}
-        onSelectTab={(tab) => {
-          if (tab === 'settings') {
-            setIsSettingsModalOpen(true);
-          } else {
+      <div className="md:hidden">
+        <MobileBottomNav
+          currentTab={mobileTab}
+          onSelectTab={(tab) => {
             setMobileTab(tab);
-          }
-        }}
-        onOpenVoiceModal={() => setIsVoiceModalOpen(true)}
-        onOpenSettings={() => setIsSettingsModalOpen(true)}
-        darkMode={darkMode}
-      />
+          }}
+          onOpenVoiceModal={() => setIsVoiceModalOpen(true)}
+          onOpenSettings={() => setMobileTab('settings')}
+          darkMode={darkMode}
+        />
+      </div>
 
       {/* Modals */}
       <AddTransactionModal
