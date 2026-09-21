@@ -2,25 +2,55 @@ import * as XLSX from 'xlsx';
 import { ProjectFinanceState } from '../types';
 import { computeFinancials } from './calculations';
 
-export function exportToExcel(state: ProjectFinanceState) {
+export function exportToExcel(
+  state: ProjectFinanceState,
+  filterYear?: number | null,
+  filterMonth?: number | null
+) {
   const { settings, transactions, budgets } = state;
-  const financials = computeFinancials(transactions, budgets, settings);
   const sym = settings.currencySymbol || '$';
   const projectName = settings.projectName?.trim() || 'Proyecto';
 
+  const MONTHS_ES = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+
+  // Filter transactions based on period selection
+  let filteredTransactions = [...transactions];
+  let periodLabel = 'Todo el historial';
+
+  if (filterYear) {
+    if (filterMonth) {
+      filteredTransactions = transactions.filter((t) => {
+        const d = new Date(t.date);
+        return d.getFullYear() === filterYear && (d.getMonth() + 1) === filterMonth;
+      });
+      const monthName = MONTHS_ES[filterMonth - 1] || `Mes ${filterMonth}`;
+      periodLabel = `${monthName} de ${filterYear}`;
+    } else {
+      filteredTransactions = transactions.filter((t) => {
+        const d = new Date(t.date);
+        return d.getFullYear() === filterYear;
+      });
+      periodLabel = `Año ${filterYear}`;
+    }
+  }
+
+  const financials = computeFinancials(filteredTransactions, budgets, settings);
   const wb = XLSX.utils.book_new();
 
   // -------------------------------------------------------------
   // HOJA 1: REGISTROS DETALLADOS
   // -------------------------------------------------------------
-  const sortedTransactions = [...transactions].sort(
+  const sortedTransactions = [...filteredTransactions].sort(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
   );
 
   const txSheetAoa: any[][] = [
     [`${projectName.toUpperCase()} - LIBRO CONTABLE DE REGISTROS`],
-    [`Moneda: ${settings.currency} (${sym}) | Fecha: ${new Date().toLocaleDateString('es-CO')} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`],
-    [`Total de Movimientos: ${transactions.length}`],
+    [`Periodo: ${periodLabel} | Generado: ${new Date().toLocaleDateString('es-CO')} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`],
+    [`Total de Movimientos en Periodo: ${sortedTransactions.length}`],
     [],
     [
       'N°',
@@ -63,7 +93,7 @@ export function exportToExcel(state: ProjectFinanceState) {
     'TOTALES',
     '',
     '',
-    `Total de Registros: ${transactions.length}`,
+    `Total de Registros: ${sortedTransactions.length}`,
     '',
     financials.netBalance,
     sumIncome,
@@ -90,14 +120,14 @@ export function exportToExcel(state: ProjectFinanceState) {
   // HOJA 2: RESUMEN Y DESTINOS
   // -------------------------------------------------------------
   const summarySheetAoa: any[][] = [
-    [`${projectName.toUpperCase()} - RESUMEN FINANCIERO`],
+    [`${projectName.toUpperCase()} - RESUMEN FINANCIERO (${periodLabel})`],
     ['Control integral de ingresos y gastos'],
     [],
     ['MÉTRICA', `VALOR (${settings.currency})`, 'DETALLE'],
     ['Saldo Neto Disponible', financials.netBalance, financials.netBalance >= 0 ? 'Fondo disponible' : 'Déficit'],
     ['Total Gastos Registrados', financials.totalExpenses, 'Erogaciones totales'],
     ['Total Ingresos Registrados', financials.totalIncome, 'Fondos y cobros totales'],
-    ['Total de Movimientos', transactions.length, 'Registros activos'],
+    ['Total de Movimientos', sortedTransactions.length, 'Registros en este periodo'],
     [],
     ['DISTRIBUCIÓN POR DESTINO O CATEGORÍA'],
     ['Destino / Categoría', `Gastado (${sym})`, '% del Total', 'Estado'],
@@ -113,7 +143,7 @@ export function exportToExcel(state: ProjectFinanceState) {
       ]);
     });
   } else {
-    summarySheetAoa.push(['(Sin destinos registrados)', 0, '0%', 'Sin actividad']);
+    summarySheetAoa.push(['(Sin destinos registrados con actividad en este periodo)', 0, '0%', 'Sin actividad']);
   }
 
   const wsSummary = XLSX.utils.aoa_to_sheet(summarySheetAoa);
@@ -127,8 +157,8 @@ export function exportToExcel(state: ProjectFinanceState) {
   XLSX.utils.book_append_sheet(wb, wsSummary, 'Resumen');
 
   const cleanName = projectName.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const dateStr = new Date().toISOString().slice(0, 10);
-  const fileName = `${cleanName || 'Finanzas'}_Registros_${dateStr}.xlsx`;
+  const cleanPeriod = periodLabel.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const fileName = `${cleanName || 'Finanzas'}_${cleanPeriod}.xlsx`;
 
   XLSX.writeFile(wb, fileName);
 }

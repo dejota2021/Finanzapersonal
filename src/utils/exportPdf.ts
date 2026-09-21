@@ -2,9 +2,40 @@ import { jsPDF } from 'jspdf';
 import { ProjectFinanceState } from '../types';
 import { computeFinancials } from './calculations';
 
-export function exportToPdf(state: ProjectFinanceState) {
+export function exportToPdf(
+  state: ProjectFinanceState,
+  filterYear?: number | null,
+  filterMonth?: number | null
+) {
   const { settings, transactions, budgets } = state;
-  const financials = computeFinancials(transactions, budgets, settings);
+
+  const MONTHS_ES = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+
+  // Filter transactions based on period selection
+  let filteredTransactions = [...transactions];
+  let periodLabel = 'Todo el historial';
+
+  if (filterYear) {
+    if (filterMonth) {
+      filteredTransactions = transactions.filter((t) => {
+        const d = new Date(t.date);
+        return d.getFullYear() === filterYear && (d.getMonth() + 1) === filterMonth;
+      });
+      const monthName = MONTHS_ES[filterMonth - 1] || `Mes ${filterMonth}`;
+      periodLabel = `${monthName} de ${filterYear}`;
+    } else {
+      filteredTransactions = transactions.filter((t) => {
+        const d = new Date(t.date);
+        return d.getFullYear() === filterYear;
+      });
+      periodLabel = `Año ${filterYear}`;
+    }
+  }
+
+  const financials = computeFinancials(filteredTransactions, budgets, settings);
   const projectName = settings.projectName?.trim() || 'Proyecto';
 
   const doc = new jsPDF({
@@ -35,7 +66,7 @@ export function exportToPdf(state: ProjectFinanceState) {
   doc.setFontSize(9);
   doc.setTextColor(212, 212, 216);
   doc.text(
-    `REPORTE DE ESTADO FINANCIERO  |  ${new Date().toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }).toUpperCase()}`,
+    `REPORTE DE ESTADO FINANCIERO  |  ${periodLabel.toUpperCase()}`,
     margin,
     25
   );
@@ -58,7 +89,7 @@ export function exportToPdf(state: ProjectFinanceState) {
     { label: 'INGRESOS TOTALES', val: `+${settings.currencySymbol}${financials.totalIncome.toLocaleString('es-CO')}`, bg: [240, 253, 244], border: [34, 197, 94], text: [22, 101, 52] },
     { label: 'GASTOS TOTALES', val: `-${settings.currencySymbol}${financials.totalExpenses.toLocaleString('es-CO')}`, bg: [254, 242, 242], border: [239, 68, 68], text: [153, 27, 27] },
     { label: 'BALANCE NETO', val: `${settings.currencySymbol}${financials.netBalance.toLocaleString('es-CO')}`, bg: [239, 246, 255], border: [59, 130, 246], text: [30, 64, 175] },
-    { label: 'MOVIMIENTOS', val: `${transactions.length}`, bg: [254, 252, 232], border: [234, 179, 8], text: [133, 77, 14] },
+    { label: 'MOVIMIENTOS', val: `${filteredTransactions.length}`, bg: [254, 252, 232], border: [234, 179, 8], text: [133, 77, 14] },
   ];
 
   kpis.forEach((kpi, i) => {
@@ -142,7 +173,7 @@ export function exportToPdf(state: ProjectFinanceState) {
 
   curY += 6.5;
 
-  const recentTx = transactions.slice(0, 16);
+  const recentTx = filteredTransactions.slice(0, 16);
   recentTx.forEach((tx, idx) => {
     const isEven = idx % 2 === 0;
     doc.setFillColor(isEven ? 250 : 255, isEven ? 250 : 255, isEven ? 250 : 255);
@@ -184,7 +215,8 @@ export function exportToPdf(state: ProjectFinanceState) {
   doc.text(`Documento generado electrónicamente - ${projectName}`, pageWidth / 2, footerY, { align: 'center' });
 
   const cleanName = projectName.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const fileName = `${cleanName || 'Reporte'}_Finanzas_${new Date().toISOString().slice(0, 10)}.pdf`;
+  const cleanPeriod = periodLabel.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const fileName = `${cleanName || 'Reporte'}_${cleanPeriod}.pdf`;
 
   doc.save(fileName);
 }

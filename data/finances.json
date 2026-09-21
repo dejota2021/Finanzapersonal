@@ -1,0 +1,57 @@
+{
+  "settings": {
+    "projectName": "SISTEMA DE FINANZA",
+    "genreOrStyle": "General",
+    "currency": "COP",
+    "currencySymbol": "$",
+    "taxRatePercent": 0,
+    "dailyBudget": 0,
+    "partners": [
+      {
+        "id": "socio-1",
+        "name": "Socio 1",
+        "role": "Integrante",
+        "sharePercent": 50,
+        "color": "#f59e0b",
+        "avatarBg": "from-amber-500 to-orange-600"
+      },
+      {
+        "id": "socio-2",
+        "name": "Socio 2",
+        "role": "Integrante",
+        "sharePercent": 50,
+        "color": "#8b5cf6",
+        "avatarBg": "from-purple-500 to-indigo-600"
+      }
+    ]
+  },
+  "budgets": [
+    {
+      "id": "dest-1",
+      "destination": "Proyecto",
+      "monthlyLimit": 0,
+      "color": "#f59e0b",
+      "iconName": "Tag",
+      "description": "Gastos e ingresos generales del proyecto"
+    },
+    {
+      "id": "dest-2",
+      "destination": "Efectivo",
+      "monthlyLimit": 0,
+      "color": "#10b981",
+      "iconName": "Tag",
+      "description": "Caja menor y efectivo disponible"
+    },
+    {
+      "id": "dest-3",
+      "destination": "Producción",
+      "monthlyLimit": 0,
+      "color": "#8b5cf6",
+      "iconName": "Tag",
+      "description": "Producción y grabación"
+    }
+  ],
+  "transactions": [],
+  "attachments": [],
+  "lastUpdated": "2026-09-19T10:00:00.000Z"
+}

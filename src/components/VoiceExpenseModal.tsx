@@ -45,6 +45,19 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
   const [parseError, setParseError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  const transcriptRef = useRef('');
+  const interimTextRef = useRef('');
+
+  const updateTranscript = (val: string) => {
+    setTranscript(val);
+    transcriptRef.current = val;
+  };
+
+  const updateInterimText = (val: string) => {
+    setInterimText(val);
+    interimTextRef.current = val;
+  };
+
   // Extracted Data Form
   const [extractedData, setExtractedData] = useState<{
     title: string;
@@ -84,8 +97,8 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
 
   const startRecording = async () => {
     setParseError(null);
-    setTranscript('');
-    setInterimText('');
+    updateTranscript('');
+    updateInterimText('');
     setExtractedData(null);
     audioChunksRef.current = [];
     isManuallyStoppedRef.current = false;
@@ -101,7 +114,7 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
       try {
         const recognition = new SpeechRecognition();
         recognition.lang = 'es-CO';
-        recognition.continuous = true;
+        recognition.continuous = false; // Capture a single segment and stop as soon as the user finishes speaking
         recognition.interimResults = true;
         recognition.maxAlternatives = 3;
 
@@ -117,16 +130,24 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
               interim += res[0].transcript;
             }
           }
-          setTranscript(accumulatedFinal);
-          setInterimText(interim);
+          updateTranscript(accumulatedFinal);
+          updateInterimText(interim);
 
           if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-          if (accumulatedFinal.trim().length > 6) {
+          if (accumulatedFinal.trim().length > 0) {
+            // Perfect responsive silence detector: stop and process after 1.2 seconds of silence
             silenceTimerRef.current = setTimeout(() => {
               if (isRecordingRef.current) {
                 stopRecording();
               }
-            }, 2800);
+            }, 1200);
+          }
+        };
+
+        recognition.onspeechend = () => {
+          // Native browser silence detection - immediately stop and process
+          if (isRecordingRef.current) {
+            stopRecording();
           }
         };
 
@@ -137,10 +158,16 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
         };
 
         recognition.onend = () => {
-          if (!isManuallyStoppedRef.current && recognitionRef.current && isRecordingRef.current) {
-            try {
-              recognition.start();
-            } catch {}
+          if (isRecordingRef.current) {
+            const currentText = [accumulatedFinal].filter(Boolean).join(' ').trim();
+            if (currentText.length > 0) {
+              stopRecording();
+            } else if (!isManuallyStoppedRef.current) {
+              // If the user hasn't spoken anything yet, restart recognition to keep waiting for voice input
+              try {
+                recognition.start();
+              } catch {}
+            }
           }
         };
 
@@ -236,10 +263,10 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
       pauseMicrophoneStream();
     }
 
-    const fullSpokenText = [transcript, interimText].filter(Boolean).join(' ').trim();
+    const fullSpokenText = [transcriptRef.current, interimTextRef.current].filter(Boolean).join(' ').trim();
     if (fullSpokenText) {
-      setTranscript(fullSpokenText);
-      setInterimText('');
+      updateTranscript(fullSpokenText);
+      updateInterimText('');
     }
 
     processVoice(fullSpokenText, audioBase64, mimeType);
@@ -258,8 +285,8 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
       }
       stopRecording();
       pauseMicrophoneStream();
-      setTranscript('');
-      setInterimText('');
+      updateTranscript('');
+      updateInterimText('');
       setExtractedData(null);
       setParseError(null);
       setIsProcessing(false);
@@ -567,8 +594,8 @@ export const VoiceExpenseModal: React.FC<VoiceExpenseModalProps> = ({
                 rows={2}
                 value={transcript + (interimText ? (transcript ? ' ' : '') + interimText : '')}
                 onChange={(e) => {
-                  setTranscript(e.target.value);
-                  setInterimText('');
+                  updateTranscript(e.target.value);
+                  updateInterimText('');
                 }}
                 placeholder={isRecording ? 'Habla ahora... las palabras aparecerán aquí en tiempo real' : 'Si no puedes hablar, también puedes escribir tu frase aquí...'}
                 className={`w-full px-3 py-2 rounded-xl text-xs font-mono border outline-none resize-none transition-colors ${

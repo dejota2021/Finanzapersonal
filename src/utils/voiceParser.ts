@@ -129,8 +129,17 @@ export function parseVoiceInput(
   const amount = extractAmountFromSpanishText(lower);
 
   // 2. TYPE DETECTION (Income vs Expense)
-  const isIncome = /\b(ingres(?:aron|ó|an|o|os)|recib(?:imos|ó|ieron|e)|entr(?:aron|ó|an)|cobr(?:amos|ó|ar|o|os)|ganan(?:cia|amos)|aporte[s]?|aport(?:ó|aron)|abon(?:o|os|aron)|ventas?|factur(?:amos|ó)|nos\s+pagaron)\b/i.test(lower);
-  const type: 'expense' | 'income' = isIncome ? 'income' : 'expense';
+  const isExpenseKeyword = /\b(gaste|gasté|gastamos|gastó|invertí|invertimos|invirtió|perdí|perdimos|perdió|perder|compré|compramos|pagamos|pagué|pago|costó|perdimos)\b/i.test(lower);
+  const isIncomeKeyword = /\b(ingres(?:aron|ó|an|o|os)|recib(?:imos|ó|ieron|e)|entr(?:aron|ó|an)|cobr(?:amos|ó|ar|o|os)|ganan(?:cia|amos)|aporte[s]?|aport(?:ó|aron)|abon(?:o|os|aron)|ventas?|factur(?:amos|ó)|nos\s+pagaron|lleg(?:ó|aron|o|a|an)|tengo|enviar(?:on|ó))\b/i.test(lower) || /me\s+enviaron|nos\s+enviaron/i.test(lower);
+
+  let type: 'expense' | 'income' = 'expense';
+  if (isIncomeKeyword && !isExpenseKeyword) {
+    type = 'income';
+  } else if (isExpenseKeyword) {
+    type = 'expense';
+  } else if (isIncomeKeyword) {
+    type = 'income';
+  }
 
   // 3. PARTNER DETECTION
   let paidByPartnerId = p1.id;
@@ -166,7 +175,7 @@ export function parseVoiceInput(
   cleanText = cleanText.replace(/\befectivos\b/gi, 'efectivo');
 
   if (!cleanText || cleanText.length < 2) {
-    if (isIncome) {
+    if (type === 'income') {
       cleanText = 'Ingreso recibido';
     } else {
       cleanText = 'Gasto registrado';

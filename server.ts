@@ -776,8 +776,8 @@ REGLAS DE EXTRACCIÓN CRÍTICAS:
    - Ejemplos de conversión: "1 millón 800" = 1800000, "1.8 millones" = 1800000, "5,000,000" = 5000000, "11 millones" = 11000000, "1.5 millones" = 1500000, "500 mil pesos" = 500000, "80 mil" = 80000, "11 palos" = 11000000, "50 lucas" = 50000.
    - NUNCA trunques valores de millones o miles. Si el texto implica millones, asegúrate de añadir todos los ceros necesarios.
 2. "type": "income" (ingreso) o "expense" (gasto).
-   - Palabras clave ingreso: "ingresaron", "entró", "recibimos", "cobro", "abono", "ingreso", "nos pagaron", "aporte".
-   - Palabras clave gasto: "gastamos", "se pagó", "pagué", "compramos", "costó".
+   - Palabras clave de ingresos (income): "ingresaron", "ingreso", "llegó", "llego", "tengo", "me enviaron", "nos enviaron", "enviaron", "entró", "recibimos", "cobro", "abono", "nos pagaron", "aporte", "venta", "facturamos". Si el usuario dice "llegó dinero", "ingresó dinero", "tengo tanto", "me enviaron tanto" (o variaciones), clasifícalo estrictamente como "income".
+   - Palabras clave de gastos (expense): "gasté", "gaste", "gastamos", "gastó", "invertí", "invertimos", "invirtió", "perdí", "perdimos", "perdió", "gasto", "pagamos", "pagué", "compramos", "costó", "perder", "compré". Si el usuario dice "gasté tanto", "gaste tanto", "invertí tanto", "perdí tanto", clasifícalo estrictamente como "expense".
 3. "title": Concepto o detalle limpio y conciso (ej: "Arroz chino", "Almuerzo", "Alquiler", "Cables"). NUNCA dejes verbos de relleno iniciales.
 4. "destination": Clasificación obligatoria. Debes asignar el concepto (ej: "arroz chino") a la categoría o destino MÁS APROPIADO de la lista de destinos existentes: [${destinationsList || 'Proyecto, Efectivo, Producción, Lanzamiento, Ensayos, General'}].
    - Si el concepto es comida/arroz chino/restaurante -> Mapea a 'Alimentación' (si existe) o el destino más lógico disponible.
@@ -819,7 +819,7 @@ Responde ÚNICAMENTE con el objeto JSON válido.`;
     while (retries <= maxRetries) {
       try {
         const generatePromise = ai.models.generateContent({
-          model: 'gemini-1.5-flash',
+          model: 'gemini-3.8-flash',
           contents: userPromptContent,
           config: {
             systemInstruction: systemPrompt,

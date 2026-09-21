@@ -32,8 +32,8 @@ interface SettingsModalProps {
   setDarkMode: (val: boolean) => void;
   isRefreshing: boolean;
   onRefresh: () => void;
-  onExportExcel: () => void;
-  onExportPdf: () => void;
+  onExportExcel: (year?: number | null, month?: number | null) => void;
+  onExportPdf: (year?: number | null, month?: number | null) => void;
   onSaveSettings: (settings: ProjectSettings) => Promise<void>;
   onResetAll?: () => Promise<void>;
 }
@@ -63,6 +63,57 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [formData, setFormData] = useState<ProjectSettings>(settings);
   const [isSaving, setIsSaving] = useState(false);
   const [consolidatedSearch, setConsolidatedSearch] = useState('');
+  const [exportScope, setExportScope] = useState<'all' | 'year' | 'month'>('all');
+
+  const handleExportExcelClick = () => {
+    if (exportScope === 'all') {
+      onExportExcel(null, null);
+    } else if (exportScope === 'year') {
+      onExportExcel(selectedYear, null);
+    } else {
+      onExportExcel(selectedYear, selectedMonth);
+    }
+  };
+
+  const handleExportPdfClick = () => {
+    if (exportScope === 'all') {
+      onExportPdf(null, null);
+    } else if (exportScope === 'year') {
+      onExportPdf(selectedYear, null);
+    } else {
+      onExportPdf(selectedYear, selectedMonth);
+    }
+  };
+
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  // Monitor screen size for desktop modal styling vs mobile tab-page inline styling
+  React.useEffect(() => {
+    const checkDesktop = () => {
+      setIsDesktop(window.innerWidth >= 768);
+    };
+    checkDesktop();
+    window.addEventListener('resize', checkDesktop);
+    return () => window.removeEventListener('resize', checkDesktop);
+  }, []);
+
+  // Handle ESC key closing (Desktop-only)
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
 
   const sym = formData.currencySymbol || '$';
 
@@ -131,32 +182,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   // If not in modal mode, render without wrapper (handled by parent)
-  return (
+  const modalContent = (
     <div
-      id="settings-page"
-      className={`w-full max-w-3xl mx-auto flex flex-col h-full`}
+      className={`w-full flex-1 flex flex-col overflow-hidden ${
+        isDesktop ? 'rounded-2xl border max-h-[90vh]' : ''
+      } ${
+        darkMode ? 'bg-neutral-900 border-neutral-800 text-neutral-100' : 'bg-white border-neutral-200 text-neutral-900'
+      }`}
     >
-      <div
-        className={`w-full flex-1 flex flex-col ${
-          darkMode ? 'bg-neutral-900 border-neutral-800 text-neutral-100' : 'bg-white border-neutral-200 text-neutral-900'
-        }`}
-      >
-        {/* Modal Header */}
-        <div className="p-4 sm:p-5 border-b border-neutral-700/30 flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-500 flex items-center justify-center flex-shrink-0">
-              <Sliders className="w-5 h-5 stroke-[2.5]" />
-            </div>
-            <div>
-              <h2 className="text-base sm:text-lg font-extrabold tracking-tight">
-                Configuración y Periodos
-              </h2>
-              <p className="text-xs sm:text-sm text-neutral-400 font-medium">
-                Hojas por mes, consolidado histórico y ajustes generales
-              </p>
-            </div>
+      {/* Modal Header */}
+      <div className="p-4 sm:p-5 border-b border-neutral-700/30 flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-500 flex items-center justify-center flex-shrink-0">
+            <Sliders className="w-5 h-5 stroke-[2.5]" />
+          </div>
+          <div>
+            <h2 className="text-base sm:text-lg font-extrabold tracking-tight">
+              Configuración y Periodos
+            </h2>
+            <p className="text-xs sm:text-sm text-neutral-400 font-medium">
+              Hojas por mes, consolidado histórico y ajustes generales
+            </p>
           </div>
         </div>
+        {isDesktop && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+            title="Cerrar"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
+      </div>
 
         {/* Navigation Tabs Inside Settings */}
         <div className="px-4 sm:px-5 pt-3 pb-2 border-b border-neutral-700/30 flex items-center gap-2 overflow-x-auto">
@@ -491,24 +550,70 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {activeTab === 'general' && (
             <div className="space-y-4 animate-fade-in">
               {/* Quick Actions / Export */}
-              <div className="p-3.5 rounded-2xl border border-neutral-700/30 bg-neutral-100 dark:bg-neutral-950/60 space-y-3">
+              <div className="p-3.5 rounded-2xl border border-neutral-700/30 bg-neutral-100 dark:bg-neutral-950/60 space-y-4">
                 <span className="text-xs font-extrabold uppercase tracking-wider text-neutral-400 block">
                   Exportaciones y Apariencia
                 </span>
+                
+                {/* Export Scope Selector */}
+                <div className="p-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-200/40 dark:bg-neutral-900/60 space-y-2">
+                  <span className="text-[11px] font-bold uppercase text-neutral-500 dark:text-neutral-400 block">
+                    1. Rango de Periodo a Exportar:
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setExportScope('all')}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                        exportScope === 'all'
+                          ? 'bg-amber-500 text-neutral-950 border-amber-500 shadow-sm shadow-amber-500/10'
+                          : 'bg-white dark:bg-neutral-950 border-neutral-300 dark:border-neutral-750 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800'
+                      }`}
+                    >
+                      Historial Completo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExportScope('year')}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                        exportScope === 'year'
+                          ? 'bg-amber-500 text-neutral-950 border-amber-500 shadow-sm shadow-amber-500/10'
+                          : 'bg-white dark:bg-neutral-950 border-neutral-300 dark:border-neutral-750 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800'
+                      }`}
+                    >
+                      Año {selectedYear}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!selectedMonth}
+                      onClick={() => setExportScope('month')}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
+                        exportScope === 'month'
+                          ? 'bg-amber-500 text-neutral-950 border-amber-500 shadow-sm shadow-amber-500/10'
+                          : 'bg-white dark:bg-neutral-950 border-neutral-300 dark:border-neutral-750 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800'
+                      }`}
+                    >
+                      {selectedMonth ? `${MONTHS_ES[selectedMonth - 1]} ${selectedYear}` : 'Mes (No seleccionado)'}
+                    </button>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   {/* Export Excel */}
                   <button
                     id="settings-export-excel-btn"
                     type="button"
-                    onClick={onExportExcel}
+                    onClick={handleExportExcelClick}
                     className="p-3 rounded-xl border text-xs sm:text-sm font-bold flex items-center gap-3 transition-all cursor-pointer bg-neutral-900 border-neutral-750 hover:bg-emerald-950/30 hover:border-emerald-600 text-emerald-400"
                   >
                     <div className="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center flex-shrink-0">
                       <FileSpreadsheet className="w-4 h-4 text-emerald-500" />
                     </div>
                     <div className="text-left">
-                      <p className="font-extrabold">Exportar Excel (.xlsx)</p>
-                      <p className="text-xs text-neutral-400 font-normal">Libro contable completo</p>
+                      <p className="font-extrabold text-xs sm:text-sm">Exportar Excel</p>
+                      <p className="text-[10px] text-neutral-400 font-normal">
+                        {exportScope === 'all' ? 'Todo el historial' : exportScope === 'year' ? `Solo el año ${selectedYear}` : `Solo mes seleccionado`}
+                      </p>
                     </div>
                   </button>
 
@@ -516,15 +621,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <button
                     id="settings-export-pdf-btn"
                     type="button"
-                    onClick={onExportPdf}
+                    onClick={handleExportPdfClick}
                     className="p-3 rounded-xl border text-xs sm:text-sm font-bold flex items-center gap-3 transition-all cursor-pointer bg-neutral-900 border-neutral-750 hover:bg-amber-950/30 hover:border-amber-600 text-amber-400"
                   >
                     <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center flex-shrink-0">
                       <FileText className="w-4 h-4 text-amber-500" />
                     </div>
                     <div className="text-left">
-                      <p className="font-extrabold">Exportar Reporte PDF</p>
-                      <p className="text-xs text-neutral-400 font-normal">Resumen y balance oficial</p>
+                      <p className="font-extrabold text-xs sm:text-sm">Exportar PDF</p>
+                      <p className="text-[10px] text-neutral-400 font-normal">
+                        {exportScope === 'all' ? 'Reporte completo' : exportScope === 'year' ? `Reporte año ${selectedYear}` : `Reporte mes seleccionado`}
+                      </p>
                     </div>
                   </button>
 
@@ -662,6 +769,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
         </div>
       </div>
+    );
+
+  if (isDesktop) {
+    return (
+      <div
+        id="settings-backdrop"
+        onClick={handleBackdropClick}
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in"
+      >
+        <div className="w-full max-w-3xl flex flex-col max-h-[90vh]">
+          {modalContent}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      id="settings-page"
+      className="w-full max-w-3xl mx-auto flex flex-col h-full"
+    >
+      {modalContent}
     </div>
   );
 };
