@@ -9,6 +9,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { PushNotificationToast } from './components/PushNotificationToast';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { DesktopDashboard } from './components/DesktopDashboard';
+import { PinLockScreen } from './components/PinLockScreen';
 import {
   fetchFinances,
   fetchVersion,
@@ -55,6 +56,7 @@ function getInitialLocalState(): ProjectFinanceState | null {
 }
 
 export default function App() {
+  const [isUnlocked, setIsUnlocked] = useState<boolean>(false);
   const [state, setState] = useState<ProjectFinanceState | null>(() => getInitialLocalState());
   const [isLoading, setIsLoading] = useState(() => getInitialLocalState() === null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -513,6 +515,16 @@ export default function App() {
     const dd = String(Math.min(now.getDate(), 28)).padStart(2, '0');
     return `${yyyy}-${mm}-${dd}`;
   }, [selectedYear, selectedMonth, now]);
+
+  if (!isUnlocked) {
+    return (
+      <PinLockScreen
+        onSuccess={() => setIsUnlocked(true)}
+        darkMode={darkMode}
+        setDarkMode={setDarkMode}
+      />
+    );
+  }
 
   if (isLoading && !state) {
     return (
