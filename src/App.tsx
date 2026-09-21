@@ -600,6 +600,7 @@ export default function App() {
             settings={state.settings}
             transactions={periodTransactions}
             darkMode={darkMode}
+            onOpenVoiceModal={() => setIsVoiceModalOpen(true)}
           />
         </div>
 
@@ -618,6 +619,7 @@ export default function App() {
               setIsAddModalOpen(true);
             }}
             onOpenDestinations={() => setIsDestinationsModalOpen(true)}
+            onOpenSettings={() => setIsSettingsModalOpen(true)}
           />
         </div>
 

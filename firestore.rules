@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Allow read, write, and delete on all documents and collections
+    match /{document=**} {
+      allow read, write: if true;
+    }
+    
+  }
+}

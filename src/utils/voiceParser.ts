@@ -12,6 +12,103 @@ export interface ParsedVoiceResult {
   suggestedDestinations: string[];
 }
 
+export function extractAmountFromSpanishText(text: string): number {
+  const clean = text.toLowerCase()
+    .replace(/\b(?:pesos\s*colombianos|pesos|cop|d[oó]lares|usd|de\s*valor|por\s*valor\s*de)\b/g, '')
+    .replace(/[^a-z0-9áéíóúüñ\s.,]/g, ' ')
+    // Replace dots in thousands format e.g. 11.000.000 or 50.000 but NOT decimals like 1.5
+    .replace(/(\d+)\.(\d{3})\b/g, '$1$2')
+    .replace(/(\d+),(\d{3})\b/g, '$1$2')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Separate numbers from multipliers when mashed together, e.g., "50mil" -> "50 mil"
+  let tokenized = clean
+    .replace(/(\d+)(mil|mill[oó]n|palos?|lucas?)/gi, '$1 $2')
+    .replace(/(mil|mill[oó]n|palos?|lucas?)(\d+)/gi, '$1 $2');
+
+  const tokens = tokenized.split(/\s+/).filter(Boolean);
+
+  const wordValues: { [key: string]: number } = {
+    'cero': 0, 'un': 1, 'uno': 1, 'una': 1, 'dos': 2, 'tres': 3, 'cuatro': 4,
+    'cinco': 5, 'seis': 6, 'siete': 7, 'ocho': 8, 'nueve': 9, 'diez': 10,
+    'once': 11, 'doce': 12, 'trece': 13, 'catorce': 14, 'quince': 15,
+    'dieciseis': 16, 'dieciséis': 16, 'diecisiete': 17, 'dieciocho': 18, 'diecinueve': 19,
+    'veinte': 20, 'veintiuno': 21, 'veintiún': 21, 'veintiuna': 21,
+    'veintidos': 22, 'veintidós': 22, 'veintitres': 23, 'veintitrés': 23,
+    'veinticuatro': 24, 'veinticinco': 25, 'veintiseis': 26, 'veintiséis': 26,
+    'veintisiete': 27, 'veintiocho': 28, 'veintinueve': 29,
+    'treinta': 30, 'cuarenta': 40, 'cincuenta': 50, 'sesenta': 60, 'setenta': 70,
+    'ochenta': 80, 'noventa': 90,
+    'cien': 100, 'ciento': 100, 'doscientos': 200, 'trescientos': 300,
+    'cuatrocientos': 400, 'quinientos': 500, 'seiscientos': 600,
+    'setecientos': 700, 'ochocientos': 800, 'novecientos': 900
+  };
+
+  const multipliers: { [key: string]: number } = {
+    'mil': 1000,
+    'luca': 1000,
+    'lucas': 1000,
+    'millon': 1000000,
+    'millón': 1000000,
+    'millones': 1000000,
+    'palo': 1000000,
+    'palos': 1000000
+  };
+
+  let total = 0;
+  let currentGroup = 0;
+
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    
+    // Attempt standard decimal/integer parse
+    const num = parseFloat(token.replace(',', '.'));
+    if (!isNaN(num)) {
+      currentGroup += num;
+      continue;
+    }
+
+    if (token === 'y') {
+      continue;
+    }
+
+    if (token === 'medio' || token === 'media') {
+      if (i > 0 && (tokens[i - 1].includes('mill') || tokens[i - 1].includes('palo'))) {
+        total += 500000;
+      } else if (i > 0 && (tokens[i - 1] === 'mil' || tokens[i - 1].includes('luca'))) {
+        total += 500;
+      } else {
+        currentGroup += 0.5;
+      }
+      continue;
+    }
+
+    if (wordValues[token] !== undefined) {
+      currentGroup += wordValues[token];
+      continue;
+    }
+
+    if (multipliers[token] !== undefined) {
+      const mult = multipliers[token];
+      if (currentGroup === 0) {
+        currentGroup = 1;
+      }
+      
+      if (mult === 1000000) {
+        total += currentGroup * mult;
+        currentGroup = 0;
+      } else if (mult === 1000) {
+        total += currentGroup * mult;
+        currentGroup = 0;
+      }
+    }
+  }
+
+  total += currentGroup;
+  return total;
+}
+
 /**
  * High-accuracy Spanish Voice NLP Parser with support for:
  * - Number words in millions, thousands, hundreds
@@ -29,176 +126,7 @@ export function parseVoiceInput(
   const p2 = partners[1] || { id: 'socio-2', name: 'Socio 2' };
 
   // 1. AMOUNT DETECTION
-  let amount = 0;
-
-  // A. Check for Colombian slang: "palos" = millions (e.g., "11 palos" -> 11,000,000, "2 palos" -> 2,000,000)
-  const palosMatch = lower.match(/(\d+(?:[.,]\d+)?)\s*palos?\b/i);
-  if (palosMatch) {
-    amount = Math.round(parseFloat(palosMatch[1].replace(',', '.')) * 1000000);
-  }
-
-  // B. Check for Colombian slang: "lucas" = thousands (e.g., "50 lucas" -> 50,000)
-  if (amount === 0) {
-    const lucasMatch = lower.match(/(\d+(?:[.,]\d+)?)\s*lucas?\b/i);
-    if (lucasMatch) {
-      amount = Math.round(parseFloat(lucasMatch[1].replace(',', '.')) * 1000);
-    }
-  }
-
-  // C. Formatted numbers with commas or dots for thousands & millions
-  // e.g. "5,000,000", "5.000.000", "500,000", "500.000", "11,000,000", "11.000.000", "50,000", "1,500,000"
-  if (amount === 0) {
-    const formattedMatch = lower.match(/(?:\$\s*)?\b(\d{1,3}(?:[,.]\d{3})+)\b/);
-    if (formattedMatch) {
-      const cleanVal = formattedMatch[1].replace(/[,.]/g, '');
-      const parsed = parseInt(cleanVal, 10);
-      if (!isNaN(parsed) && parsed > 0) {
-        amount = parsed;
-      }
-    }
-  }
-
-  // D. Plain large digits (e.g. "5000000", "11000000", "500000", "80000")
-  if (amount === 0) {
-    const plainLargeDigits = lower.match(/(?:\$\s*)?\b(\d{4,12})\b/);
-    if (plainLargeDigits) {
-      amount = parseInt(plainLargeDigits[1], 10);
-    }
-  }
-
-  // E. Digits with "millones" (e.g., "11 millones", "1.5 millones", "11,5 millones")
-  if (amount === 0) {
-    const digitMillionsMatch = lower.match(/(\d+(?:[.,]\d+)?)\s*mill[oó]n(?:es)?\b/i);
-    if (digitMillionsMatch) {
-      const val = parseFloat(digitMillionsMatch[1].replace(',', '.'));
-      amount = Math.round(val * 1000000);
-      // Check if followed by thousands e.g. "2 millones 500 mil"
-      const extraThousandsMatch = lower.match(/mill[oó]n(?:es)?\s*(?:con|y)?\s*(\d+(?:[.,]\d+)?)\s*mil\b/i);
-      if (extraThousandsMatch) {
-        amount += Math.round(parseFloat(extraThousandsMatch[1].replace(',', '.')) * 1000);
-      }
-    }
-  }
-
-  // D. Word numbers for millions (e.g. "once millones", "dos millones y medio", "veinte millones")
-  if (amount === 0) {
-    const wordMillionsMap: [RegExp, number][] = [
-      [/\bcien\s*millones\b/i, 100000000],
-      [/\bcincuenta\s*millones\b/i, 50000000],
-      [/\bcuarenta\s*millones\b/i, 40000000],
-      [/\btreinta\s*millones\b/i, 30000000],
-      [/\bveinticinco\s*millones\b/i, 25000000],
-      [/\bveinte\s*millones\b/i, 20000000],
-      [/\bdiecinueve\s*millones\b/i, 19000000],
-      [/\bdieciocho\s*millones\b/i, 18000000],
-      [/\bdiecisiete\s*millones\b/i, 17000000],
-      [/\bdiecis[eé]is\s*millones\b/i, 16000000],
-      [/\bquince\s*millones\b/i, 15000000],
-      [/\bcatorce\s*millones\b/i, 14000000],
-      [/\btrece\s*millones\b/i, 13000000],
-      [/\bdoce\s*millones\b/i, 12000000],
-      [/\bonce\s*millones\b/i, 11000000],
-      [/\bdiez\s*millones\b/i, 10000000],
-      [/\bnueve\s*millones\b/i, 9000000],
-      [/\bocho\s*millones\b/i, 8000000],
-      [/\bsiete\s*millones\b/i, 7000000],
-      [/\bseis\s*millones\b/i, 6000000],
-      [/\bcinco\s*millones\b/i, 5000000],
-      [/\bcuatro\s*millones\b/i, 4000000],
-      [/\btres\s*millones\b/i, 3000000],
-      [/\bdos\s*millones\b/i, 2000000],
-      [/\b(?:un|uno|una)\s*mill[oó]n\b/i, 1000000],
-      [/\bmedio\s*mill[oó]n\b/i, 500000],
-    ];
-    for (const [re, val] of wordMillionsMap) {
-      if (re.test(lower)) {
-        amount = val;
-        // Check for "y medio"
-        if (/\bmill[oó]n(?:es)?\s*y\s*medio\b/i.test(lower)) {
-          amount += 500000;
-        }
-        // Check for thousands addition like "y quinientos mil"
-        const extraMatch = lower.match(/\bmill[oó]n(?:es)?\s*(?:con|y)?\s*(\d+)\s*mil\b/i);
-        if (extraMatch) {
-          amount += parseInt(extraMatch[1], 10) * 1000;
-        }
-        break;
-      }
-    }
-  }
-
-  // E. Digits with "mil" (e.g. "500 mil", "80 mil", "250 mil", "15 mil")
-  if (amount === 0) {
-    const digitThousandsMatch = lower.match(/(\d+(?:[.,]\d+)?)\s*mil\b/i);
-    if (digitThousandsMatch) {
-      const val = parseFloat(digitThousandsMatch[1].replace(',', '.'));
-      amount = Math.round(val * 1000);
-      // Check for hundreds after mil e.g. "500 mil 200"
-      const extraHundreds = lower.match(/\bmil\s*(?:con|y)?\s*(\d{1,3})\b(?!\s*mil|\s*mill)/i);
-      if (extraHundreds) {
-        amount += parseInt(extraHundreds[1], 10);
-      }
-    }
-  }
-
-  // F. Words with "mil"
-  if (amount === 0) {
-    const wordThousandsMap: [RegExp, number][] = [
-      [/\bnovecientos\s*mil\b/i, 900000],
-      [/\bochocientos\s*(?:y\s*cincuenta\s*)?mil\b/i, lower.includes('cincuenta') ? 850000 : 800000],
-      [/\bsetecientos\s*(?:y\s*cincuenta\s*)?mil\b/i, lower.includes('cincuenta') ? 750000 : 700000],
-      [/\bseiscientos\s*(?:y\s*cincuenta\s*)?mil\b/i, lower.includes('cincuenta') ? 650000 : 600000],
-      [/\bquinientos\s*(?:y\s*cincuenta\s*)?mil\b/i, lower.includes('cincuenta') ? 550000 : 500000],
-      [/\bcuatrocientos\s*(?:y\s*cincuenta\s*)?mil\b/i, lower.includes('cincuenta') ? 450000 : 400000],
-      [/\btrescientos\s*(?:y\s*cincuenta\s*)?mil\b/i, lower.includes('cincuenta') ? 350000 : 300000],
-      [/\bdoscientos\s*(?:y\s*cincuenta\s*)?mil\b/i, lower.includes('cincuenta') ? 250000 : 200000],
-      [/\bciento\s*cincuenta\s*mil\b/i, 150000],
-      [/\bciento?\s*mil\b/i, 100000],
-      [/\bnoventa\s*mil\b/i, 90000],
-      [/\bochenta\s*mil\b/i, 80000],
-      [/\bsetenta\s*mil\b/i, 70000],
-      [/\bsesenta\s*mil\b/i, 60000],
-      [/\bcincuenta\s*mil\b/i, 50000],
-      [/\bcuarenta\s*mil\b/i, 40000],
-      [/\btreinta\s*mil\b/i, 30000],
-      [/\bveinticinco\s*mil\b/i, 25000],
-      [/\bveinte\s*mil\b/i, 20000],
-      [/\bquince\s*mil\b/i, 15000],
-      [/\bdiez\s*mil\b/i, 10000],
-      [/\bnueve\s*mil\b/i, 9000],
-      [/\bocho\s*mil\b/i, 8000],
-      [/\bsiete\s*mil\b/i, 7000],
-      [/\bseis\s*mil\b/i, 6000],
-      [/\b(?:cincomil|cinco\s*mil)\b/i, 5000],
-      [/\bcuatro\s*mil\b/i, 4000],
-      [/\btres\s*mil\b/i, 3000],
-      [/\bdos\s*mil\b/i, 2000],
-      [/\b(?:un\s*)?mil\b(?!\s*millones)/i, 1000],
-    ];
-    for (const [re, val] of wordThousandsMap) {
-      if (re.test(lower)) {
-        amount = val;
-        break;
-      }
-    }
-  }
-
-  // G. Dot-formatted thousands/millions e.g. "11.000.000", "500.000", "2.500.000"
-  if (amount === 0) {
-    const dottedMatch = lower.match(/\b(\d{1,3}(?:\.\d{3})+)\b/);
-    if (dottedMatch) {
-      amount = parseFloat(dottedMatch[1].replace(/\./g, ''));
-    }
-  }
-
-  // H. Standard raw numeric digits
-  if (amount === 0) {
-    const rawDigitsMatch = lower.match(/\b(\d+(?:[.,]\d+)?)\b/);
-    if (rawDigitsMatch) {
-      const parsed = parseFloat(rawDigitsMatch[1].replace(',', '.'));
-      amount = parsed;
-    }
-  }
+  const amount = extractAmountFromSpanishText(lower);
 
   // 2. TYPE DETECTION (Income vs Expense)
   const isIncome = /\b(ingres(?:aron|ó|an|o|os)|recib(?:imos|ó|ieron|e)|entr(?:aron|ó|an)|cobr(?:amos|ó|ar|o|os)|ganan(?:cia|amos)|aporte[s]?|aport(?:ó|aron)|abon(?:o|os|aron)|ventas?|factur(?:amos|ó)|nos\s+pagaron)\b/i.test(lower);

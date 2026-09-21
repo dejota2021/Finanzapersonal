@@ -4,6 +4,8 @@ import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs } from 'firebase/firestore';
 import { ProjectFinanceState, Transaction, BudgetDestination, SyncEvent } from './src/types';
 import { parseVoiceInput } from './src/utils/voiceParser';
 
@@ -81,7 +83,98 @@ const initialData: ProjectFinanceState = {
   lastUpdated: new Date().toISOString(),
 };
 
-function loadState(): ProjectFinanceState {
+const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+let firebaseApp: any = null;
+let db: any = null;
+
+try {
+  if (fs.existsSync(configPath)) {
+    const firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    firebaseApp = initializeApp(firebaseConfig);
+    db = getFirestore(firebaseApp);
+    console.log('Firebase Firestore initialized successfully from config.');
+  } else {
+    console.warn('firebase-applet-config.json not found. Using local filesystem as fallback.');
+  }
+} catch (err: any) {
+  console.error('Failed to initialize Firebase:', err.message);
+}
+
+let cachedState: ProjectFinanceState = { ...initialData };
+let isFirestoreSynced = false;
+
+// Async synchronization of Firestore database
+async function syncFromFirestore() {
+  if (!db) {
+    console.warn('Firestore is not configured. Falling back to local filesystem.');
+    cachedState = loadStateLocal();
+    return;
+  }
+
+  try {
+    console.log('Syncing database state from Firestore...');
+    const settingsDocRef = doc(db, 'settings', 'project');
+    const settingsSnap = await getDoc(settingsDocRef);
+
+    if (settingsSnap.exists()) {
+      cachedState.settings = settingsSnap.data() as any;
+
+      // Load budgets
+      const budgetsCol = collection(db, 'budgets');
+      const budgetsSnap = await getDocs(budgetsCol);
+      cachedState.budgets = budgetsSnap.docs.map(d => d.data() as BudgetDestination);
+
+      // Load transactions
+      const txCol = collection(db, 'transactions');
+      const txSnap = await getDocs(txCol);
+      cachedState.transactions = txSnap.docs
+        .map(d => d.data() as Transaction)
+        .sort((a, b) => new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime());
+
+      // Load attachments
+      const attCol = collection(db, 'attachments');
+      const attSnap = await getDocs(attCol);
+      cachedState.attachments = attSnap.docs.map(d => d.data() as any);
+
+      cachedState.lastUpdated = new Date().toISOString();
+      console.log(`Firestore loaded successfully: ${cachedState.transactions.length} transactions, ${cachedState.budgets.length} budgets, ${cachedState.attachments?.length || 0} attachments.`);
+      isFirestoreSynced = true;
+    } else {
+      console.log('Firestore is empty. Commencing automatic migration of local files to Firestore...');
+      const localData = loadStateLocal();
+      cachedState = { ...localData };
+
+      // Initialize settings
+      await setDoc(settingsDocRef, cachedState.settings);
+
+      // Save budgets
+      for (const b of cachedState.budgets) {
+        await setDoc(doc(db, 'budgets', b.id), b);
+      }
+
+      // Save transactions
+      for (const t of cachedState.transactions) {
+        await setDoc(doc(db, 'transactions', t.id), t);
+      }
+
+      // Save attachments
+      if (cachedState.attachments && cachedState.attachments.length > 0) {
+        for (const a of cachedState.attachments) {
+          await setDoc(doc(db, 'attachments', a.id), a);
+        }
+      }
+
+      console.log('Migration to Firestore completed successfully.');
+      isFirestoreSynced = true;
+    }
+  } catch (err: any) {
+    console.error('Error loading state from Firestore, falling back to local files:', err.message);
+    cachedState = loadStateLocal();
+  }
+}
+
+// Local loaders as fallbacks
+function loadStateLocal(): ProjectFinanceState {
   try {
     if (fs.existsSync(DATA_FILE)) {
       const raw = fs.readFileSync(DATA_FILE, 'utf-8');
@@ -92,18 +185,100 @@ function loadState(): ProjectFinanceState {
       return parsed;
     }
   } catch (err) {
-    console.error('Error loading finances.json, falling back to initial data', err);
+    console.error('Error reading local file, falling back to initial data', err);
   }
-  saveState(initialData);
-  return initialData;
+  return { ...initialData };
 }
 
+// In-memory state accessor
+function loadState(): ProjectFinanceState {
+  return cachedState;
+}
+
+// Background Firestore writers to keep everything fully updated in real-time!
+async function saveSettingsToFirestore(settings: any) {
+  if (!db) return;
+  try {
+    await setDoc(doc(db, 'settings', 'project'), settings);
+  } catch (err: any) {
+    console.error('Failed to write settings to Firestore:', err.message);
+  }
+}
+
+async function saveBudgetToFirestore(budget: BudgetDestination) {
+  if (!db) return;
+  try {
+    await setDoc(doc(db, 'budgets', budget.id), budget);
+  } catch (err: any) {
+    console.error('Failed to write budget to Firestore:', err.message);
+  }
+}
+
+async function deleteBudgetFromFirestore(id: string) {
+  if (!db) return;
+  try {
+    await deleteDoc(doc(db, 'budgets', id));
+  } catch (err: any) {
+    console.error('Failed to delete budget from Firestore:', err.message);
+  }
+}
+
+async function saveTransactionToFirestore(tx: Transaction) {
+  if (!db) return;
+  try {
+    await setDoc(doc(db, 'transactions', tx.id), tx);
+  } catch (err: any) {
+    console.error('Failed to write transaction to Firestore:', err.message);
+  }
+}
+
+async function deleteTransactionFromFirestore(id: string) {
+  if (!db) return;
+  try {
+    await deleteDoc(doc(db, 'transactions', id));
+  } catch (err: any) {
+    console.error('Failed to delete transaction from Firestore:', err.message);
+  }
+}
+
+async function saveAttachmentToFirestore(att: any) {
+  if (!db) return;
+  try {
+    await setDoc(doc(db, 'attachments', att.id), att);
+  } catch (err: any) {
+    console.error('Failed to write attachment to Firestore:', err.message);
+  }
+}
+
+async function deleteAttachmentFromFirestore(id: string) {
+  if (!db) return;
+  try {
+    await deleteDoc(doc(db, 'attachments', id));
+  } catch (err: any) {
+    console.error('Failed to delete attachment from Firestore:', err.message);
+  }
+}
+
+async function clearTransactionsFromFirestore() {
+  if (!db) return;
+  try {
+    const txCol = collection(db, 'transactions');
+    const txSnap = await getDocs(txCol);
+    for (const d of txSnap.docs) {
+      await deleteDoc(doc(db, 'transactions', d.id));
+    }
+  } catch (err: any) {
+    console.error('Failed to clear transactions from Firestore:', err.message);
+  }
+}
+
+// Local file backup sync
 function saveState(state: ProjectFinanceState) {
   try {
     state.lastUpdated = new Date().toISOString();
     fs.writeFileSync(DATA_FILE, JSON.stringify(state, null, 2), 'utf-8');
   } catch (err) {
-    console.error('Error writing finances.json', err);
+    console.error('Error writing local finances.json backup', err);
   }
 }
 
@@ -232,11 +407,13 @@ app.post('/api/finances/transactions', (req, res) => {
         ...newTx,
       };
       saveState(state);
+      saveTransactionToFirestore(state.transactions[existingIndex]);
       return res.status(200).json({ success: true, transaction: state.transactions[existingIndex] });
     }
 
     state.transactions.unshift(newTx);
     saveState(state);
+    saveTransactionToFirestore(newTx);
 
     const partnerName = state.settings.partners.find((p) => p.id === newTx.paidBy)?.name || newTx.paidBy || 'Usuario';
     const isVoice = Boolean(newTx.voiceRecorded);
@@ -273,6 +450,7 @@ app.put('/api/finances/transactions/:id', (req, res) => {
       id,
     };
     saveState(state);
+    saveTransactionToFirestore(state.transactions[index]);
 
     const updatedTx = state.transactions[index];
     const partnerName = state.settings.partners.find((p) => p.id === updatedTx.paidBy)?.name || updatedTx.paidBy || 'Usuario';
@@ -301,6 +479,7 @@ app.delete('/api/finances/transactions/:id', (req, res) => {
     const tx = state.transactions.find((t) => String(t.id) === String(id));
     state.transactions = state.transactions.filter((t) => String(t.id) !== String(id));
     saveState(state);
+    deleteTransactionFromFirestore(id);
 
     if (tx) {
       const syncEvent: SyncEvent = {
@@ -320,7 +499,7 @@ app.delete('/api/finances/transactions/:id', (req, res) => {
 });
 
 // 7. Update Budgets / Destinations
-app.post('/api/finances/budgets', (req, res) => {
+app.post('/api/finances/budgets', async (req, res) => {
   try {
     const { budgets } = req.body;
     if (!Array.isArray(budgets)) {
@@ -329,6 +508,21 @@ app.post('/api/finances/budgets', (req, res) => {
     const state = loadState();
     state.budgets = budgets;
     saveState(state);
+
+    if (db) {
+      try {
+        const budgetsCol = collection(db, 'budgets');
+        const budgetsSnap = await getDocs(budgetsCol);
+        for (const d of budgetsSnap.docs) {
+          await deleteDoc(doc(db, 'budgets', d.id));
+        }
+        for (const b of budgets) {
+          await setDoc(doc(db, 'budgets', b.id), b);
+        }
+      } catch (e: any) {
+        console.error('Error syncing budgets to Firestore:', e.message);
+      }
+    }
 
     const syncEvent: SyncEvent = {
       id: `ev-${Date.now()}`,
@@ -346,12 +540,13 @@ app.post('/api/finances/budgets', (req, res) => {
 });
 
 // 8. Update Settings
-app.post('/api/finances/settings', (req, res) => {
+app.post('/api/finances/settings', async (req, res) => {
   try {
     const { settings } = req.body;
     const state = loadState();
     state.settings = { ...state.settings, ...settings };
     saveState(state);
+    saveSettingsToFirestore(state.settings);
 
     const syncEvent: SyncEvent = {
       id: `ev-${Date.now()}`,
@@ -369,11 +564,12 @@ app.post('/api/finances/settings', (req, res) => {
 });
 
 // 8b. Reset all data to 0
-app.post('/api/finances/reset', (req, res) => {
+app.post('/api/finances/reset', async (req, res) => {
   try {
     const state = loadState();
     state.transactions = [];
     saveState(state);
+    clearTransactionsFromFirestore();
 
     const syncEvent: SyncEvent = {
       id: `ev-${Date.now()}`,
@@ -391,7 +587,7 @@ app.post('/api/finances/reset', (req, res) => {
 });
 
 // 8c. Restore data
-app.post('/api/finances/restore', (req, res) => {
+app.post('/api/finances/restore', async (req, res) => {
   try {
     const { state: incomingState } = req.body;
     if (!incomingState || !incomingState.settings) {
@@ -408,6 +604,37 @@ app.post('/api/finances/restore', (req, res) => {
         state.attachments = incomingState.attachments;
       }
       saveState(state);
+
+      if (db) {
+        try {
+          await setDoc(doc(db, 'settings', 'project'), state.settings);
+          const budgetsCol = collection(db, 'budgets');
+          const budgetsSnap = await getDocs(budgetsCol);
+          for (const d of budgetsSnap.docs) {
+            await deleteDoc(doc(db, 'budgets', d.id));
+          }
+          for (const b of state.budgets) {
+            await setDoc(doc(db, 'budgets', b.id), b);
+          }
+          await clearTransactionsFromFirestore();
+          for (const t of state.transactions) {
+            await setDoc(doc(db, 'transactions', t.id), t);
+          }
+          const attCol = collection(db, 'attachments');
+          const attSnap = await getDocs(attCol);
+          for (const d of attSnap.docs) {
+            await deleteDoc(doc(db, 'attachments', d.id));
+          }
+          if (state.attachments) {
+            for (const a of state.attachments) {
+              await setDoc(doc(db, 'attachments', a.id), a);
+            }
+          }
+        } catch (e: any) {
+          console.error('Error during Firestore restore sync:', e.message);
+        }
+      }
+
       broadcastSSE({
         id: `ev-${Date.now()}`,
         type: 'SETTINGS_UPDATED',
@@ -424,7 +651,7 @@ app.post('/api/finances/restore', (req, res) => {
 });
 
 // 8d. Upload / Attach file
-app.post('/api/finances/attachments', (req, res) => {
+app.post('/api/finances/attachments', async (req, res) => {
   try {
     const { name, size, type, fileCategory, year, month, scope, notes, dataUrl, uploadedBy } = req.body;
     if (!name || !dataUrl) {
@@ -450,6 +677,7 @@ app.post('/api/finances/attachments', (req, res) => {
     };
     state.attachments.unshift(newAttachment);
     saveState(state);
+    saveAttachmentToFirestore(newAttachment);
 
     const syncEvent: SyncEvent = {
       id: `ev-${Date.now()}`,
@@ -468,7 +696,7 @@ app.post('/api/finances/attachments', (req, res) => {
 });
 
 // 8e. Delete Attachment
-app.delete('/api/finances/attachments/:id', (req, res) => {
+app.delete('/api/finances/attachments/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const state = loadState();
@@ -478,6 +706,7 @@ app.delete('/api/finances/attachments/:id', (req, res) => {
     const att = state.attachments.find((a) => a.id === id);
     state.attachments = state.attachments.filter((a) => a.id !== id);
     saveState(state);
+    deleteAttachmentFromFirestore(id);
 
     if (att) {
       const syncEvent: SyncEvent = {
@@ -675,6 +904,8 @@ Responde ÚNICAMENTE con el objeto JSON válido.`;
 
 // Vite Middleware for SPA development & static serving in production
 async function startServer() {
+  await syncFromFirestore();
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
